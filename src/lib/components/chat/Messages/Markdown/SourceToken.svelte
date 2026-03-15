@@ -65,7 +65,7 @@
 				align="start"
 				strategy="fixed"
 				sideOffset={6}
-				el={containerElement}
+				ref={containerElement}
 			>
 				<div class="bg-gray-50 dark:bg-gray-850 rounded-xl p-1 cursor-pointer">
 					{#each token.citationIdentifiers ?? token.ids as identifier}
