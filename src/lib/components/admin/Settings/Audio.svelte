@@ -69,6 +69,7 @@
 	let REALTIME_MAX_HISTORY_TURNS = 8;
 	let REALTIME_SUMMARY_MODEL = '';
 	let REALTIME_SUMMARY_PROMPT = 'Summarize this conversation context in 3-5 sentences, preserving all key facts, decisions and topics discussed:';
+	let REALTIME_STT_ENABLED = false;
 	let REALTIME_CAMERA_INTERVAL = 2;
 
 	// eslint-disable-next-line no-undef
@@ -171,6 +172,7 @@
 				MAX_HISTORY_TURNS: REALTIME_MAX_HISTORY_TURNS,
 				SUMMARY_MODEL: REALTIME_SUMMARY_MODEL,
 				SUMMARY_PROMPT: REALTIME_SUMMARY_PROMPT,
+				STT_ENABLED: REALTIME_STT_ENABLED,
 				CAMERA_INTERVAL: REALTIME_CAMERA_INTERVAL
 			}
 		});
@@ -237,6 +239,7 @@
 				REALTIME_MAX_HISTORY_TURNS = res.realtime.MAX_HISTORY_TURNS ?? 8;
 				REALTIME_SUMMARY_MODEL = res.realtime.SUMMARY_MODEL ?? '';
 				REALTIME_SUMMARY_PROMPT = res.realtime.SUMMARY_PROMPT ?? 'Summarize this conversation context in 3-5 sentences, preserving all key facts, decisions and topics discussed:';
+				REALTIME_STT_ENABLED = res.realtime.STT_ENABLED ?? false;
 				REALTIME_CAMERA_INTERVAL = res.realtime.CAMERA_INTERVAL ?? 2;
 			}
 		}
@@ -1032,6 +1035,25 @@
 
 					<hr class="border-gray-100/30 dark:border-gray-850/30 my-2" />
 				{/if}
+
+				<div class="mb-2 py-0.5 flex w-full justify-between">
+					<div class="self-center text-xs font-medium">
+						{$i18n.t('STT Transcription')}
+						<span class="text-gray-400 font-normal">{$i18n.t('(parallel Whisper for user speech)')}</span>
+					</div>
+					<button
+						class="p-1 px-3 text-xs flex rounded-sm transition {REALTIME_STT_ENABLED
+							? 'bg-gray-200 dark:bg-gray-700'
+							: ''} hover:bg-gray-200 dark:hover:bg-gray-700"
+						type="button"
+						on:click={() => { REALTIME_STT_ENABLED = !REALTIME_STT_ENABLED; }}
+					>
+						{REALTIME_STT_ENABLED ? $i18n.t('On') : $i18n.t('Off')}
+					</button>
+				</div>
+				<div class="mb-2 text-xs text-gray-400 dark:text-gray-500">
+					{$i18n.t('Runs Whisper in parallel with the audio model to transcribe user speech. Enable if your provider does not return user transcription. Adds server load.')}
+				</div>
 
 				<div class="mb-2 py-0.5 flex w-full justify-between">
 					<div class="self-center text-xs font-medium">

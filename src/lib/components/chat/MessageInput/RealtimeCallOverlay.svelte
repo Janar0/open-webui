@@ -69,14 +69,8 @@
 	let selectedVoice = $settings?.audio?.realtime?.voice ?? 'alloy';
 	let showVoiceMenu = false;
 
-	// ----- STT fallback toggle -----
-	let sttEnabled = $settings?.audio?.realtime?.stt ?? false;
-
-	function toggleStt() {
-		sttEnabled = !sttEnabled;
-		const audio = { ...($settings?.audio ?? {}), realtime: { ...($settings?.audio?.realtime ?? {}), stt: sttEnabled } };
-		settings.set({ ...$settings, audio });
-	}
+	// ----- STT fallback (admin config) -----
+	let sttEnabled = false;
 
 	function selectVoice(v: string) {
 		selectedVoice = v;
@@ -908,6 +902,7 @@
 				MAX_HISTORY_TURNS = cfg?.realtime?.MAX_HISTORY_TURNS ?? 8;
 				SUMMARY_MODEL = cfg?.realtime?.SUMMARY_MODEL ?? '';
 				SUMMARY_PROMPT = cfg?.realtime?.SUMMARY_PROMPT ?? SUMMARY_PROMPT;
+				sttEnabled = cfg?.realtime?.STT_ENABLED ?? false;
 				CAMERA_INTERVAL_SECS = cfg?.realtime?.CAMERA_INTERVAL ?? 2;
 			}
 		} catch {}
@@ -1089,17 +1084,6 @@
 						</div>
 					{/if}
 				</div>
-
-				<!-- STT toggle -->
-				<Tooltip content={$i18n.t('Transcription')}>
-					<button
-						class="p-2.5 rounded-full text-xs font-medium {sttEnabled ? 'bg-blue-500 text-white' : 'bg-gray-50 dark:bg-gray-900'}"
-						type="button"
-						on:click={toggleStt}
-					>
-						STT
-					</button>
-				</Tooltip>
 			</div>
 
 			<!-- Status label -->
