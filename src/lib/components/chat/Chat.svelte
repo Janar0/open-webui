@@ -2935,6 +2935,14 @@
 					{showMessage}
 					{eventTarget}
 					{codeInterpreterEnabled}
+					on:chatUpdate={async () => {
+						if (!$chatId) {
+							await initChatHandler(history);
+						}
+						if ($chatId) {
+							await saveChatHandler($chatId, history);
+						}
+					}}
 				/>
 			</PaneGroup>
 		</div>

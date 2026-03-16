@@ -3,6 +3,7 @@
 	import { config, models, settings, showCallOverlay } from '$lib/stores';
 	import { WEBUI_BASE_URL, WEBUI_API_BASE_URL } from '$lib/constants';
 	import { toast } from 'svelte-sonner';
+	import { v4 as uuidv4 } from 'uuid';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import VideoInputMenu from './CallOverlay/VideoInputMenu.svelte';
 
@@ -11,6 +12,7 @@
 
 	export let modelId: string;
 	export let chatId: string;
+	export let chatHistory: any = null; // bind:history from parent — chat message tree
 
 	// ----- realtime config from backend (loaded in onMount) -----
 	let realtimeApiUrl = '';
@@ -44,6 +46,8 @@
 	let BARGE_IN_ENABLED = false;
 	let BARGE_IN_RMS_THRESHOLD = 0.06;
 	let MAX_HISTORY_TURNS = 8;
+	let SUMMARY_MODEL = '';
+	let SUMMARY_PROMPT = 'Summarize this conversation context in 3-5 sentences, preserving all key facts, decisions and topics discussed:';
 	let CAMERA_INTERVAL_SECS = 2;
 	let audioStream: MediaStream | null = null;
 	let mediaRecorder: MediaRecorder | null = null;
@@ -60,6 +64,23 @@
 	let isPlaying = false;
 	let currentSource: AudioBufferSourceNode | null = null;
 
+	// ----- Voice selector -----
+	const REALTIME_VOICES = ['alloy','ash','ballad','cedar','coral','echo','fable','marin','nova','onyx','sage','shimmer','verse'];
+	let selectedVoice = $settings?.audio?.realtime?.voice ?? 'alloy';
+	let showVoiceMenu = false;
+
+	function selectVoice(v: string) {
+		selectedVoice = v;
+		showVoiceMenu = false;
+		// Auto-save to settings
+		const audio = { ...($settings?.audio ?? {}), realtime: { ...($settings?.audio?.realtime ?? {}), voice: v } };
+		settings.set({ ...$settings, audio });
+		// Update WS session if connected (voice applies to next response)
+		if (ws?.readyState === WebSocket.OPEN) {
+			ws.send(JSON.stringify({ type: 'session.update', session: { voice: v } }));
+		}
+	}
+
 	// ----- Camera -----
 	let camera = false;
 	let cameraStream: MediaStream | null = null;
@@ -72,8 +93,85 @@
 	// =========================================================
 
 	function getVoice(): string {
-		if (model?.info?.meta?.tts?.voice) return model.info.meta.tts.voice;
-		return $settings?.audio?.tts?.voice ?? 'alloy';
+		return selectedVoice;
+	}
+
+	/**
+	 * Append a user+assistant exchange to the chat history tree
+	 * so it persists in the conversation after the overlay closes.
+	 */
+	function appendToChatHistory(userText: string, assistantText: string) {
+		if (!chatHistory || (!userText && !assistantText)) return;
+
+		const parentId = chatHistory.currentId ?? null;
+
+		// User message
+		if (userText) {
+			const userMsgId = uuidv4();
+			const userMsg = {
+				id: userMsgId,
+				parentId,
+				childrenIds: [],
+				role: 'user',
+				content: userText,
+				timestamp: Math.floor(Date.now() / 1000)
+			};
+			chatHistory.messages[userMsgId] = userMsg;
+			if (parentId && chatHistory.messages[parentId]) {
+				chatHistory.messages[parentId].childrenIds = [
+					...chatHistory.messages[parentId].childrenIds,
+					userMsgId
+				];
+			}
+			chatHistory.currentId = userMsgId;
+
+			// Assistant message
+			if (assistantText) {
+				const assistantMsgId = uuidv4();
+				const assistantMsg = {
+					id: assistantMsgId,
+					parentId: userMsgId,
+					childrenIds: [],
+					role: 'assistant',
+					content: assistantText,
+					model: model?.id,
+					modelName: model?.name ?? model?.id,
+					modelIdx: 0,
+					done: true,
+					timestamp: Math.floor(Date.now() / 1000)
+				};
+				chatHistory.messages[assistantMsgId] = assistantMsg;
+				chatHistory.messages[userMsgId].childrenIds = [assistantMsgId];
+				chatHistory.currentId = assistantMsgId;
+			}
+		} else if (assistantText) {
+			// Only assistant (no user transcript)
+			const assistantMsgId = uuidv4();
+			const assistantMsg = {
+				id: assistantMsgId,
+				parentId,
+				childrenIds: [],
+				role: 'assistant',
+				content: assistantText,
+				model: model?.id,
+				modelName: model?.name ?? model?.id,
+				modelIdx: 0,
+				done: true,
+				timestamp: Math.floor(Date.now() / 1000)
+			};
+			chatHistory.messages[assistantMsgId] = assistantMsg;
+			if (parentId && chatHistory.messages[parentId]) {
+				chatHistory.messages[parentId].childrenIds = [
+					...chatHistory.messages[parentId].childrenIds,
+					assistantMsgId
+				];
+			}
+			chatHistory.currentId = assistantMsgId;
+		}
+
+		// Trigger reactivity
+		chatHistory = chatHistory;
+		dispatch('chatUpdate');
 	}
 
 	function arrayBufferToBase64(buf: Uint8Array): string {
@@ -178,7 +276,7 @@
 	// =========================================================
 
 	async function compressHistory() {
-		if (isCompressing || history.length <= MAX_HISTORY_TURNS * 2) return;
+		if (MAX_HISTORY_TURNS === 0 || isCompressing || history.length <= MAX_HISTORY_TURNS * 2) return;
 		isCompressing = true;
 
 		const keepCount = MAX_HISTORY_TURNS * 2;
@@ -187,6 +285,7 @@
 
 		const dialogue = toCompress.map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`).join('\n');
 		const prevContext = compressedSummary ? `Previous summary:\n${compressedSummary}\n\nNew exchanges:\n` : '';
+		const summaryModel = SUMMARY_MODEL || model?.id;
 
 		try {
 			const res = await fetch(`${WEBUI_BASE_URL}/api/chat/completions`, {
@@ -196,11 +295,11 @@
 					'Content-Type': 'application/json'
 				},
 				body: JSON.stringify({
-					model: model?.id,
+					model: summaryModel,
 					messages: [
 						{
 							role: 'user',
-							content: `Summarize this conversation context in 3-5 sentences, preserving all key facts, decisions and topics discussed:\n\n${prevContext}${dialogue}`
+							content: `${SUMMARY_PROMPT}\n\n${prevContext}${dialogue}`
 						}
 					],
 					stream: false
@@ -253,11 +352,16 @@
 
 		const fd = new FormData();
 		fd.append('audio', audioBlob, 'recording.wav');
+		fd.append('voice', getVoice());
 		// Build context: prepend compressed summary if available, then recent history
-		const contextHistory = compressedSummary
-			? [{ role: 'system', content: `Conversation summary so far: ${compressedSummary}` }, ...history]
-			: history;
-		fd.append('history', JSON.stringify(contextHistory.slice(-(MAX_HISTORY_TURNS * 2 + (compressedSummary ? 1 : 0)))));
+		if (MAX_HISTORY_TURNS > 0) {
+			const contextHistory = compressedSummary
+				? [{ role: 'system', content: `Conversation summary so far: ${compressedSummary}` }, ...history]
+				: history;
+			fd.append('history', JSON.stringify(contextHistory.slice(-(MAX_HISTORY_TURNS * 2 + (compressedSummary ? 1 : 0)))));
+		} else {
+			fd.append('history', '[]');
+		}
 
 		// Attach camera frame only if camera is active
 		if (camera) {
@@ -330,6 +434,8 @@
 					newEntries.push({ role: 'assistant', content: finalText });
 					history = [...history, ...newEntries];
 					compressHistory();
+					// Persist to chat
+					appendToChatHistory(userText, finalText);
 				}
 				partialAssistantText = '';
 
@@ -349,6 +455,8 @@
 					newEntries.push({ role: 'assistant', content: data.text });
 					history = [...history, ...newEntries];
 					compressHistory();
+					// Persist to chat
+					appendToChatHistory(data.user_text || '', data.text);
 				}
 				partialAssistantText = '';
 
@@ -632,6 +740,10 @@
 		requestAnimationFrame(loop);
 	}
 
+	// Accumulate WS transcripts for chat history
+	let wsUserTranscript = '';
+	let wsAssistantTranscript = '';
+
 	function handleWsEvent(event: any) {
 		switch (event.type) {
 			case 'session.created':
@@ -641,20 +753,35 @@
 			case 'input_audio_buffer.speech_started':
 				stopPlayback();
 				ws?.send(JSON.stringify({ type: 'response.cancel' }));
+				wsUserTranscript = '';
+				wsAssistantTranscript = '';
 				status = 'recording';
 				break;
 			case 'input_audio_buffer.speech_stopped':
 				status = 'thinking';
+				break;
+			case 'conversation.item.input_audio_transcription.completed':
+				// User speech transcription
+				if (event.transcript) wsUserTranscript = event.transcript;
 				break;
 			case 'response.audio.delta':
 				status = 'speaking';
 				if (event.delta) enqueueAudio(event.delta);
 				break;
 			case 'response.audio_transcript.delta':
-				if (event.delta) transcript += event.delta;
+				if (event.delta) {
+					transcript += event.delta;
+					wsAssistantTranscript += event.delta;
+				}
 				break;
 			case 'response.done':
 				if (!isPlaying) status = 'listening';
+				// Persist exchange to chat history
+				if (wsAssistantTranscript || wsUserTranscript) {
+					appendToChatHistory(wsUserTranscript, wsAssistantTranscript);
+					wsUserTranscript = '';
+					wsAssistantTranscript = '';
+				}
 				break;
 			case 'error':
 				status = 'error';
@@ -752,6 +879,8 @@
 				BARGE_IN_RMS_THRESHOLD = cfg?.realtime?.BARGE_IN_THRESHOLD ?? 0.06;
 				VOICE_FREQ_THRESHOLD = cfg?.realtime?.VOICE_THRESHOLD ?? 12;
 				MAX_HISTORY_TURNS = cfg?.realtime?.MAX_HISTORY_TURNS ?? 8;
+				SUMMARY_MODEL = cfg?.realtime?.SUMMARY_MODEL ?? '';
+				SUMMARY_PROMPT = cfg?.realtime?.SUMMARY_PROMPT ?? SUMMARY_PROMPT;
 				CAMERA_INTERVAL_SECS = cfg?.realtime?.CAMERA_INTERVAL ?? 2;
 			}
 		} catch {}
@@ -812,8 +941,12 @@
 	onDestroy(cleanup);
 </script>
 
+<!-- svelte-ignore a11y-click-events-have-key-events -->
+<!-- svelte-ignore a11y-no-static-element-interactions -->
 {#if $showCallOverlay}
-	<div class="max-w-lg w-full h-full max-h-[100dvh] flex flex-col justify-between p-3 md:p-6">
+	<div class="max-w-lg w-full h-full max-h-[100dvh] flex flex-col justify-between p-3 md:p-6"
+		on:click={() => { if (showVoiceMenu) showVoiceMenu = false; }}
+	>
 
 		<!-- Top: camera thumbnail or spacer -->
 		{#if camera}
@@ -883,8 +1016,8 @@
 
 		<!-- Bottom bar -->
 		<div class="flex justify-between items-center pb-2 w-full">
-			<!-- Camera button -->
-			<div>
+			<!-- Left buttons: camera + voice -->
+			<div class="flex items-center gap-1">
 				{#if camera}
 					<VideoInputMenu devices={videoInputDevices} on:change={async (e) => { selectedVideoInputDeviceId = e.detail; stopVideoStream(); await startVideoStream(); }}>
 						<button class="p-3 rounded-full bg-gray-50 dark:bg-gray-900" type="button">
@@ -903,6 +1036,32 @@
 						</button>
 					</Tooltip>
 				{/if}
+
+				<!-- Voice selector -->
+				<div class="relative">
+					<Tooltip content={$i18n.t('Voice')}>
+						<button class="p-2.5 rounded-full bg-gray-50 dark:bg-gray-900 text-xs font-medium capitalize" type="button"
+							on:click={() => { showVoiceMenu = !showVoiceMenu; }}
+						>
+							{selectedVoice}
+						</button>
+					</Tooltip>
+					{#if showVoiceMenu}
+						<!-- svelte-ignore a11y-click-events-have-key-events -->
+						<!-- svelte-ignore a11y-no-static-element-interactions -->
+						<div class="absolute bottom-full left-0 mb-1 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-48 overflow-y-auto z-50">
+							{#each REALTIME_VOICES as v}
+								<button
+									type="button"
+									class="block w-full text-left px-3 py-1.5 text-xs capitalize hover:bg-gray-100 dark:hover:bg-gray-800 {v === selectedVoice ? 'font-bold text-blue-500' : ''}"
+									on:click={() => selectVoice(v)}
+								>
+									{v}
+								</button>
+							{/each}
+						</div>
+					{/if}
+				</div>
 			</div>
 
 			<!-- Status label -->

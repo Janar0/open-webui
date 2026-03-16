@@ -139,6 +139,7 @@ async def audio_chat(
     audio: UploadFile = File(...),
     history: str = Form("[]"),   # JSON-encoded list of {role, content} dicts
     image_b64: str = Form(""),   # optional JPEG base64 from camera
+    voice: str = Form(""),       # user-selected voice (alloy, echo, etc.)
     user=Depends(get_verified_user),
 ):
     """
@@ -156,7 +157,10 @@ async def audio_chat(
     if not api_key:
         raise HTTPException(status_code=400, detail="Realtime API key not configured")
 
-    voice = getattr(request.app.state.config, "TTS_VOICE", None) or "alloy"
+    # Prefer user-selected voice from request, fall back to admin config
+    if not voice.strip():
+        voice = getattr(request.app.state.config, "TTS_VOICE", None) or "alloy"
+    voice = voice.strip()
 
     audio_bytes = await audio.read()
     audio_b64 = base64.b64encode(audio_bytes).decode()

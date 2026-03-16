@@ -67,6 +67,8 @@
 	let REALTIME_BARGE_IN_THRESHOLD = 0.06;
 	let REALTIME_VOICE_THRESHOLD = 12;
 	let REALTIME_MAX_HISTORY_TURNS = 8;
+	let REALTIME_SUMMARY_MODEL = '';
+	let REALTIME_SUMMARY_PROMPT = 'Summarize this conversation context in 3-5 sentences, preserving all key facts, decisions and topics discussed:';
 	let REALTIME_CAMERA_INTERVAL = 2;
 
 	// eslint-disable-next-line no-undef
@@ -167,6 +169,8 @@
 				BARGE_IN_THRESHOLD: REALTIME_BARGE_IN_THRESHOLD,
 				VOICE_THRESHOLD: REALTIME_VOICE_THRESHOLD,
 				MAX_HISTORY_TURNS: REALTIME_MAX_HISTORY_TURNS,
+				SUMMARY_MODEL: REALTIME_SUMMARY_MODEL,
+				SUMMARY_PROMPT: REALTIME_SUMMARY_PROMPT,
 				CAMERA_INTERVAL: REALTIME_CAMERA_INTERVAL
 			}
 		});
@@ -231,6 +235,8 @@
 				REALTIME_BARGE_IN_THRESHOLD = res.realtime.BARGE_IN_THRESHOLD ?? 0.06;
 				REALTIME_VOICE_THRESHOLD = res.realtime.VOICE_THRESHOLD ?? 12;
 				REALTIME_MAX_HISTORY_TURNS = res.realtime.MAX_HISTORY_TURNS ?? 8;
+				REALTIME_SUMMARY_MODEL = res.realtime.SUMMARY_MODEL ?? '';
+				REALTIME_SUMMARY_PROMPT = res.realtime.SUMMARY_PROMPT ?? 'Summarize this conversation context in 3-5 sentences, preserving all key facts, decisions and topics discussed:';
 				REALTIME_CAMERA_INTERVAL = res.realtime.CAMERA_INTERVAL ?? 2;
 			}
 		}
@@ -979,17 +985,53 @@
 				<div class="mb-2 py-0.5 flex w-full justify-between">
 					<div class="self-center text-xs font-medium">
 						{$i18n.t('Max History Turns')}
-						<span class="text-gray-400 font-normal">{$i18n.t('(context optimization)')}</span>
+						<span class="text-gray-400 font-normal">
+							{REALTIME_MAX_HISTORY_TURNS === 0 ? $i18n.t('(disabled — no context)') : $i18n.t('(pairs sent to API)')}
+						</span>
 					</div>
 					<div class="flex items-center gap-2">
 						<input
-							type="range" min="1" max="20" step="1"
+							type="range" min="0" max="20" step="1"
 							class="w-24 accent-black dark:accent-white"
 							bind:value={REALTIME_MAX_HISTORY_TURNS}
 						/>
 						<span class="text-xs w-8 text-right">{REALTIME_MAX_HISTORY_TURNS}</span>
 					</div>
 				</div>
+				<div class="mb-2 text-xs text-gray-400 dark:text-gray-500">
+					{$i18n.t('Number of recent voice exchanges (user + assistant) sent as context. Older turns are compressed into a summary. Set to 0 to disable history — each exchange starts fresh.')}
+				</div>
+
+				{#if REALTIME_MAX_HISTORY_TURNS > 0}
+					<hr class="border-gray-100/30 dark:border-gray-850/30 my-2" />
+
+					<div class="mb-2">
+						<div class="mb-1.5 text-xs font-medium">
+							{$i18n.t('Summary Model')}
+							<span class="text-gray-400 font-normal">{$i18n.t('(for compressing old voice turns)')}</span>
+						</div>
+						<input
+							class="w-full rounded-lg py-2 px-4 text-sm bg-gray-50 dark:text-gray-300 dark:bg-gray-850 outline-hidden"
+							bind:value={REALTIME_SUMMARY_MODEL}
+							placeholder={$i18n.t('Leave empty to use the realtime model')}
+						/>
+					</div>
+
+					<div class="mb-2">
+						<div class="mb-1.5 text-xs font-medium">{$i18n.t('Summary Prompt')}</div>
+						<Textarea
+							className="w-full rounded-lg py-2 px-4 text-sm bg-gray-50 dark:text-gray-300 dark:bg-gray-850 outline-hidden"
+							bind:value={REALTIME_SUMMARY_PROMPT}
+							placeholder={$i18n.t('Prompt used to compress old conversation turns into a summary')}
+							minSize={60}
+						/>
+						<div class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+							{$i18n.t('The conversation text will be appended after this prompt.')}
+						</div>
+					</div>
+
+					<hr class="border-gray-100/30 dark:border-gray-850/30 my-2" />
+				{/if}
 
 				<div class="mb-2 py-0.5 flex w-full justify-between">
 					<div class="self-center text-xs font-medium">
