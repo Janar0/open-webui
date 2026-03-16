@@ -432,7 +432,9 @@
 								<RealtimeCallOverlay
 									{modelId}
 									{chatId}
+									bind:chatHistory={history}
 									on:close={() => showControls.set(false)}
+									on:chatUpdate
 								/>
 							{:else}
 								<CallOverlay

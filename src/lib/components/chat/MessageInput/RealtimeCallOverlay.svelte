@@ -69,6 +69,15 @@
 	let selectedVoice = $settings?.audio?.realtime?.voice ?? 'alloy';
 	let showVoiceMenu = false;
 
+	// ----- STT fallback toggle -----
+	let sttEnabled = $settings?.audio?.realtime?.stt ?? false;
+
+	function toggleStt() {
+		sttEnabled = !sttEnabled;
+		const audio = { ...($settings?.audio ?? {}), realtime: { ...($settings?.audio?.realtime ?? {}), stt: sttEnabled } };
+		settings.set({ ...$settings, audio });
+	}
+
 	function selectVoice(v: string) {
 		selectedVoice = v;
 		showVoiceMenu = false;
@@ -335,6 +344,17 @@
 		return canvas.toDataURL('image/jpeg', 0.6).split(',')[1]; // base64 only
 	}
 
+	/** Transcribe audio via Open WebUI's STT endpoint (runs in parallel) */
+	function transcribeAudio(audioBlob: Blob): Promise<string> {
+		const sttFd = new FormData();
+		sttFd.append('file', audioBlob, 'recording.wav');
+		return fetch(`${WEBUI_API_BASE_URL}/audio/transcriptions`, {
+			method: 'POST',
+			headers: { Authorization: `Bearer ${localStorage.token}` },
+			body: sttFd
+		}).then(r => r.json()).then(d => d?.text?.trim() || '').catch(() => '');
+	}
+
 	async function sendAudioHttp(audioBlob: Blob) {
 		// Cancel any previous in-flight request (barge-in)
 		if (abortController) {
@@ -349,6 +369,9 @@
 		isSending = true;
 		if (BARGE_IN_ENABLED) stopPlayback();
 		status = 'thinking';
+
+		// Start STT transcription in parallel (fallback if model doesn't return user_text)
+		const sttPromise = sttEnabled ? transcribeAudio(audioBlob) : Promise.resolve('');
 
 		const fd = new FormData();
 		fd.append('audio', audioBlob, 'recording.wav');
@@ -427,6 +450,8 @@
 				}
 
 				const finalText = textText || transcriptText;
+				// If model didn't return user transcription, use STT fallback
+				if (!userText) userText = await sttPromise;
 				if (finalText) {
 					transcript = finalText;
 					const newEntries: { role: string; content: string }[] = [];
@@ -449,14 +474,16 @@
 				partialAssistantText = data.text || '';
 
 				if (data.text) {
+					let ut = data.user_text || '';
+					if (!ut) ut = await sttPromise;
 					transcript = data.text;
 					const newEntries: { role: string; content: string }[] = [];
-					if (data.user_text) newEntries.push({ role: 'user', content: data.user_text });
+					if (ut) newEntries.push({ role: 'user', content: ut });
 					newEntries.push({ role: 'assistant', content: data.text });
 					history = [...history, ...newEntries];
 					compressHistory();
 					// Persist to chat
-					appendToChatHistory(data.user_text || '', data.text);
+					appendToChatHistory(ut, data.text);
 				}
 				partialAssistantText = '';
 
@@ -1038,7 +1065,9 @@
 				{/if}
 
 				<!-- Voice selector -->
-				<div class="relative">
+				<!-- svelte-ignore a11y-click-events-have-key-events -->
+				<!-- svelte-ignore a11y-no-static-element-interactions -->
+				<div class="relative" on:click|stopPropagation>
 					<Tooltip content={$i18n.t('Voice')}>
 						<button class="p-2.5 rounded-full bg-gray-50 dark:bg-gray-900 text-xs font-medium capitalize" type="button"
 							on:click={() => { showVoiceMenu = !showVoiceMenu; }}
@@ -1047,8 +1076,6 @@
 						</button>
 					</Tooltip>
 					{#if showVoiceMenu}
-						<!-- svelte-ignore a11y-click-events-have-key-events -->
-						<!-- svelte-ignore a11y-no-static-element-interactions -->
 						<div class="absolute bottom-full left-0 mb-1 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-48 overflow-y-auto z-50">
 							{#each REALTIME_VOICES as v}
 								<button
@@ -1062,6 +1089,17 @@
 						</div>
 					{/if}
 				</div>
+
+				<!-- STT toggle -->
+				<Tooltip content={$i18n.t('Transcription')}>
+					<button
+						class="p-2.5 rounded-full text-xs font-medium {sttEnabled ? 'bg-blue-500 text-white' : 'bg-gray-50 dark:bg-gray-900'}"
+						type="button"
+						on:click={toggleStt}
+					>
+						STT
+					</button>
+				</Tooltip>
 			</div>
 
 			<!-- Status label -->
