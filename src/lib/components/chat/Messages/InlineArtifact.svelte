@@ -126,7 +126,7 @@ window.addEventListener('load',function(){setTimeout(rh,200);setTimeout(rh,800);
 	}
 
 	function downloadArtifact() {
-		const blob = new Blob([wrapContent(code, lang)], { type: 'text/html' });
+		const blob = new Blob([wrapContent(code, lang, chatBgColor)], { type: 'text/html' });
 		const url = URL.createObjectURL(blob);
 		const a = document.createElement('a');
 		a.href = url;

@@ -504,7 +504,6 @@
 		try {
 			const decoded = await ctx.decodeAudioData(arrayBuffer);
 			// Downmix to mono
-			const mono = new AudioContext({ sampleRate: 16000 });
 			const offlineCtx = new OfflineAudioContext(1, Math.ceil(decoded.duration * 16000), 16000);
 			const src = offlineCtx.createBufferSource();
 			src.buffer = decoded;

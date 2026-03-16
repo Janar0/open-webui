@@ -1267,7 +1267,7 @@
 			</div>
 
 
-	<div>
+			<div>
 				<div class=" py-0.5 flex w-full justify-between">
 					<div id="iframe-sandbox-allow-same-origin-label" class=" self-center text-xs">
 						{$i18n.t('iframe Sandbox Allow Same Origin')}
@@ -1345,7 +1345,7 @@
 				</div>
 			</div>
 
-		<div class=" my-2 text-sm font-medium">{$i18n.t('File')}</div>
+			<div class=" my-2 text-sm font-medium">{$i18n.t('File')}</div>
 
 			<div>
 				<div class=" py-0.5 flex w-full justify-between">
