@@ -56,6 +56,19 @@
 
 	let STT_WHISPER_MODEL_LOADING = false;
 
+	// Realtime voice mode
+	let REALTIME_ENABLED = false;
+	let REALTIME_MODEL = 'openai/gpt-audio-mini';
+	let REALTIME_API_BASE_URL = 'https://openrouter.ai/api/v1';
+	let REALTIME_API_KEY = '';
+	let REALTIME_RESPONSE_MODE = 'streaming';
+	let REALTIME_VISION_MODEL = 'google/gemini-2.5-flash';
+	let REALTIME_BARGE_IN_ENABLED = true;
+	let REALTIME_BARGE_IN_THRESHOLD = 0.06;
+	let REALTIME_VOICE_THRESHOLD = 12;
+	let REALTIME_MAX_HISTORY_TURNS = 8;
+	let REALTIME_CAMERA_INTERVAL = 2;
+
 	// eslint-disable-next-line no-undef
 	let voices: SpeechSynthesisVoice[] = [];
 	let models: Awaited<ReturnType<typeof _getModels>>['models'] = [];
@@ -142,6 +155,19 @@
 				MISTRAL_API_KEY: STT_MISTRAL_API_KEY,
 				MISTRAL_API_BASE_URL: STT_MISTRAL_API_BASE_URL,
 				MISTRAL_USE_CHAT_COMPLETIONS: STT_MISTRAL_USE_CHAT_COMPLETIONS
+			},
+			realtime: {
+				ENABLED: REALTIME_ENABLED,
+				MODEL: REALTIME_MODEL,
+				API_BASE_URL: REALTIME_API_BASE_URL,
+				API_KEY: REALTIME_API_KEY,
+				RESPONSE_MODE: REALTIME_RESPONSE_MODE,
+				VISION_MODEL: REALTIME_VISION_MODEL,
+				BARGE_IN_ENABLED: REALTIME_BARGE_IN_ENABLED,
+				BARGE_IN_THRESHOLD: REALTIME_BARGE_IN_THRESHOLD,
+				VOICE_THRESHOLD: REALTIME_VOICE_THRESHOLD,
+				MAX_HISTORY_TURNS: REALTIME_MAX_HISTORY_TURNS,
+				CAMERA_INTERVAL: REALTIME_CAMERA_INTERVAL
 			}
 		});
 
@@ -193,6 +219,20 @@
 			STT_MISTRAL_API_KEY = res.stt.MISTRAL_API_KEY;
 			STT_MISTRAL_API_BASE_URL = res.stt.MISTRAL_API_BASE_URL;
 			STT_MISTRAL_USE_CHAT_COMPLETIONS = res.stt.MISTRAL_USE_CHAT_COMPLETIONS;
+
+			if (res.realtime) {
+				REALTIME_ENABLED = res.realtime.ENABLED ?? false;
+				REALTIME_MODEL = res.realtime.MODEL ?? 'openai/gpt-audio-mini';
+				REALTIME_API_BASE_URL = res.realtime.API_BASE_URL ?? 'https://openrouter.ai/api/v1';
+				REALTIME_API_KEY = res.realtime.API_KEY ?? '';
+				REALTIME_RESPONSE_MODE = res.realtime.RESPONSE_MODE ?? 'streaming';
+				REALTIME_VISION_MODEL = res.realtime.VISION_MODEL ?? 'google/gemini-2.5-flash';
+				REALTIME_BARGE_IN_ENABLED = res.realtime.BARGE_IN_ENABLED ?? true;
+				REALTIME_BARGE_IN_THRESHOLD = res.realtime.BARGE_IN_THRESHOLD ?? 0.06;
+				REALTIME_VOICE_THRESHOLD = res.realtime.VOICE_THRESHOLD ?? 12;
+				REALTIME_MAX_HISTORY_TURNS = res.realtime.MAX_HISTORY_TURNS ?? 8;
+				REALTIME_CAMERA_INTERVAL = res.realtime.CAMERA_INTERVAL ?? 2;
+			}
 		}
 
 		await getVoices();
@@ -816,6 +856,156 @@
 					)}
 				</div>
 			</div>
+		</div>
+
+		<div>
+			<div class="mt-0.5 mb-2.5 text-base font-medium">{$i18n.t('Realtime Voice Mode')}</div>
+
+			<hr class="border-gray-100/30 dark:border-gray-850/30 my-2" />
+
+			<div class="mb-2 py-0.5 flex w-full justify-between">
+				<div class="self-center text-xs font-medium">{$i18n.t('Enable Realtime Voice Mode')}</div>
+				<button
+					class="p-1 px-3 text-xs flex rounded-sm transition {REALTIME_ENABLED
+						? 'bg-gray-200 dark:bg-gray-700'
+						: ''} hover:bg-gray-200 dark:hover:bg-gray-700"
+					type="button"
+					on:click={() => { REALTIME_ENABLED = !REALTIME_ENABLED; }}
+				>
+					{#if REALTIME_ENABLED}
+						{$i18n.t('On')}
+					{:else}
+						{$i18n.t('Off')}
+					{/if}
+				</button>
+			</div>
+
+			{#if REALTIME_ENABLED}
+				<div class="mb-2">
+					<div class="mb-1.5 text-xs font-medium">{$i18n.t('API Base URL')}</div>
+					<input
+						class="w-full rounded-lg py-2 px-4 text-sm bg-gray-50 dark:text-gray-300 dark:bg-gray-850 outline-hidden"
+						bind:value={REALTIME_API_BASE_URL}
+						placeholder="https://openrouter.ai/api/v1"
+					/>
+				</div>
+
+				<div class="mb-2">
+					<div class="mb-1.5 text-xs font-medium">{$i18n.t('API Key')}</div>
+					<SensitiveInput
+						placeholder={$i18n.t('API Key')}
+						bind:value={REALTIME_API_KEY}
+					/>
+				</div>
+
+				<div class="mb-2">
+					<div class="mb-1.5 text-xs font-medium">{$i18n.t('Model')}</div>
+					<input
+						class="w-full rounded-lg py-2 px-4 text-sm bg-gray-50 dark:text-gray-300 dark:bg-gray-850 outline-hidden"
+						bind:value={REALTIME_MODEL}
+						placeholder="openai/gpt-audio-mini"
+					/>
+				</div>
+
+				<div class="mb-2">
+					<div class="mb-1.5 text-xs font-medium">{$i18n.t('Vision Model')} <span class="text-gray-400 font-normal">{$i18n.t('(for camera frame description)')}</span></div>
+					<input
+						class="w-full rounded-lg py-2 px-4 text-sm bg-gray-50 dark:text-gray-300 dark:bg-gray-850 outline-hidden"
+						bind:value={REALTIME_VISION_MODEL}
+						placeholder="google/gemini-2.5-flash"
+					/>
+				</div>
+
+				<div class="mb-2 py-0.5 flex w-full justify-between">
+					<div class="self-center text-xs font-medium">{$i18n.t('Response Mode')}</div>
+					<div class="flex items-center relative">
+						<select
+							class="cursor-pointer w-fit pr-8 rounded-sm px-2 p-1 text-xs bg-transparent outline-hidden text-right"
+							bind:value={REALTIME_RESPONSE_MODE}
+						>
+							<option value="streaming">{$i18n.t('Streaming (OpenRouter)')}</option>
+							<option value="non-streaming">{$i18n.t('Non-streaming (OpenAI)')}</option>
+						</select>
+					</div>
+				</div>
+
+				<hr class="border-gray-100/30 dark:border-gray-850/30 my-2" />
+
+				<div class="mb-2 py-0.5 flex w-full justify-between">
+					<div class="self-center text-xs font-medium">{$i18n.t('Barge-in (interrupt AI while speaking)')}</div>
+					<button
+						class="p-1 px-3 text-xs flex rounded-sm transition {REALTIME_BARGE_IN_ENABLED
+							? 'bg-gray-200 dark:bg-gray-700'
+							: ''} hover:bg-gray-200 dark:hover:bg-gray-700"
+						type="button"
+						on:click={() => { REALTIME_BARGE_IN_ENABLED = !REALTIME_BARGE_IN_ENABLED; }}
+					>
+						{REALTIME_BARGE_IN_ENABLED ? $i18n.t('On') : $i18n.t('Off')}
+					</button>
+				</div>
+
+				{#if REALTIME_BARGE_IN_ENABLED}
+				<div class="mb-2 py-0.5 flex w-full justify-between">
+					<div class="self-center text-xs font-medium">
+						{$i18n.t('Barge-in Sensitivity')}
+						<span class="text-gray-400 font-normal">{$i18n.t('(RMS threshold, lower = more sensitive)')}</span>
+					</div>
+					<div class="flex items-center gap-2">
+						<input
+							type="range" min="0.01" max="0.3" step="0.01"
+							class="w-24 accent-black dark:accent-white"
+							bind:value={REALTIME_BARGE_IN_THRESHOLD}
+						/>
+						<span class="text-xs w-8 text-right">{REALTIME_BARGE_IN_THRESHOLD.toFixed(2)}</span>
+					</div>
+				</div>
+				{/if}
+
+				<div class="mb-2 py-0.5 flex w-full justify-between">
+					<div class="self-center text-xs font-medium">
+						{$i18n.t('Voice Detection Threshold')}
+						<span class="text-gray-400 font-normal">{$i18n.t('(frequency, lower = more sensitive)')}</span>
+					</div>
+					<div class="flex items-center gap-2">
+						<input
+							type="range" min="1" max="60" step="1"
+							class="w-24 accent-black dark:accent-white"
+							bind:value={REALTIME_VOICE_THRESHOLD}
+						/>
+						<span class="text-xs w-8 text-right">{REALTIME_VOICE_THRESHOLD}</span>
+					</div>
+				</div>
+
+				<div class="mb-2 py-0.5 flex w-full justify-between">
+					<div class="self-center text-xs font-medium">
+						{$i18n.t('Max History Turns')}
+						<span class="text-gray-400 font-normal">{$i18n.t('(context optimization)')}</span>
+					</div>
+					<div class="flex items-center gap-2">
+						<input
+							type="range" min="1" max="20" step="1"
+							class="w-24 accent-black dark:accent-white"
+							bind:value={REALTIME_MAX_HISTORY_TURNS}
+						/>
+						<span class="text-xs w-8 text-right">{REALTIME_MAX_HISTORY_TURNS}</span>
+					</div>
+				</div>
+
+				<div class="mb-2 py-0.5 flex w-full justify-between">
+					<div class="self-center text-xs font-medium">
+						{$i18n.t('Camera Frame Interval')}
+						<span class="text-gray-400 font-normal">{$i18n.t('(seconds)')}</span>
+					</div>
+					<div class="flex items-center gap-2">
+						<input
+							type="range" min="0.1" max="10" step="0.1"
+							class="w-24 accent-black dark:accent-white"
+							bind:value={REALTIME_CAMERA_INTERVAL}
+						/>
+						<span class="text-xs w-10 text-right">{REALTIME_CAMERA_INTERVAL.toFixed(1)}s</span>
+					</div>
+				</div>
+			{/if}
 		</div>
 	</div>
 	<div class="flex justify-end text-sm font-medium">

@@ -74,6 +74,7 @@ from open_webui.routers import (
     images,
     ollama,
     openai,
+    realtime,
     retrieval,
     pipelines,
     tasks,
@@ -211,6 +212,17 @@ from open_webui.config import (
     AUDIO_TTS_AZURE_SPEECH_REGION,
     AUDIO_TTS_AZURE_SPEECH_BASE_URL,
     AUDIO_TTS_AZURE_SPEECH_OUTPUT_FORMAT,
+    REALTIME_ENABLED,
+    REALTIME_MODEL,
+    REALTIME_API_BASE_URL,
+    REALTIME_API_KEY,
+    REALTIME_RESPONSE_MODE,
+    REALTIME_VISION_MODEL,
+    REALTIME_BARGE_IN_ENABLED,
+    REALTIME_BARGE_IN_THRESHOLD,
+    REALTIME_VOICE_THRESHOLD,
+    REALTIME_MAX_HISTORY_TURNS,
+    REALTIME_CAMERA_INTERVAL,
     PLAYWRIGHT_WS_URL,
     PLAYWRIGHT_TIMEOUT,
     FIRECRAWL_API_BASE_URL,
@@ -457,6 +469,7 @@ from open_webui.config import (
     IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE,
     TOOLS_FUNCTION_CALLING_PROMPT_TEMPLATE,
     VOICE_MODE_PROMPT_TEMPLATE,
+    ARTIFACT_PROMPT,
     QUERY_GENERATION_PROMPT_TEMPLATE,
     AUTOCOMPLETE_GENERATION_PROMPT_TEMPLATE,
     AUTOCOMPLETE_GENERATION_INPUT_MAX_LENGTH,
@@ -586,7 +599,7 @@ class SPAStaticFiles(StaticFiles):
 
 
 if LOG_FORMAT != "json":
-    print(rf"""
+    banner = rf"""
  ██████╗ ██████╗ ███████╗███╗   ██╗    ██╗    ██╗███████╗██████╗ ██╗   ██╗██╗
 ██╔═══██╗██╔══██╗██╔════╝████╗  ██║    ██║    ██║██╔════╝██╔══██╗██║   ██║██║
 ██║   ██║██████╔╝█████╗  ██╔██╗ ██║    ██║ █╗ ██║█████╗  ██████╔╝██║   ██║██║
@@ -598,7 +611,10 @@ if LOG_FORMAT != "json":
 v{VERSION} - building the best AI user interface.
 {f"Commit: {WEBUI_BUILD_HASH}" if WEBUI_BUILD_HASH != "dev-build" else ""}
 https://github.com/open-webui/open-webui
-""")
+"""
+    import sys
+    sys.stdout.buffer.write(banner.encode("utf-8", errors="replace"))
+    sys.stdout.buffer.flush()
 
 
 @asynccontextmanager
@@ -1294,6 +1310,17 @@ app.state.config.TTS_AZURE_SPEECH_REGION = AUDIO_TTS_AZURE_SPEECH_REGION
 app.state.config.TTS_AZURE_SPEECH_BASE_URL = AUDIO_TTS_AZURE_SPEECH_BASE_URL
 app.state.config.TTS_AZURE_SPEECH_OUTPUT_FORMAT = AUDIO_TTS_AZURE_SPEECH_OUTPUT_FORMAT
 
+app.state.config.REALTIME_ENABLED = REALTIME_ENABLED
+app.state.config.REALTIME_MODEL = REALTIME_MODEL
+app.state.config.REALTIME_API_BASE_URL = REALTIME_API_BASE_URL
+app.state.config.REALTIME_API_KEY = REALTIME_API_KEY
+app.state.config.REALTIME_RESPONSE_MODE = REALTIME_RESPONSE_MODE
+app.state.config.REALTIME_VISION_MODEL = REALTIME_VISION_MODEL
+app.state.config.REALTIME_BARGE_IN_ENABLED = REALTIME_BARGE_IN_ENABLED
+app.state.config.REALTIME_BARGE_IN_THRESHOLD = REALTIME_BARGE_IN_THRESHOLD
+app.state.config.REALTIME_VOICE_THRESHOLD = REALTIME_VOICE_THRESHOLD
+app.state.config.REALTIME_MAX_HISTORY_TURNS = REALTIME_MAX_HISTORY_TURNS
+app.state.config.REALTIME_CAMERA_INTERVAL = REALTIME_CAMERA_INTERVAL
 
 app.state.faster_whisper_model = None
 app.state.speech_synthesiser = None
@@ -1339,6 +1366,7 @@ app.state.config.AUTOCOMPLETE_GENERATION_INPUT_MAX_LENGTH = (
     AUTOCOMPLETE_GENERATION_INPUT_MAX_LENGTH
 )
 app.state.config.VOICE_MODE_PROMPT_TEMPLATE = VOICE_MODE_PROMPT_TEMPLATE
+app.state.config.ARTIFACT_PROMPT = ARTIFACT_PROMPT
 
 
 ########################################
@@ -1533,6 +1561,7 @@ app.include_router(tasks.router, prefix="/api/v1/tasks", tags=["tasks"])
 app.include_router(images.router, prefix="/api/v1/images", tags=["images"])
 
 app.include_router(audio.router, prefix="/api/v1/audio", tags=["audio"])
+app.include_router(realtime.router, prefix="/api/v1/realtime", tags=["realtime"])
 app.include_router(retrieval.router, prefix="/api/v1/retrieval", tags=["retrieval"])
 
 app.include_router(configs.router, prefix="/api/v1/configs", tags=["configs"])
@@ -2172,6 +2201,7 @@ async def get_app_config(request: Request):
                     "enable_google_drive_integration": app.state.config.ENABLE_GOOGLE_DRIVE_INTEGRATION,
                     "enable_onedrive_integration": app.state.config.ENABLE_ONEDRIVE_INTEGRATION,
                     "enable_memories": app.state.config.ENABLE_MEMORIES,
+                    "enable_realtime": app.state.config.REALTIME_ENABLED,
                     **(
                         {
                             "enable_onedrive_personal": ENABLE_ONEDRIVE_PERSONAL,

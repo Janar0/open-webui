@@ -188,14 +188,42 @@ class STTConfigForm(BaseModel):
     MISTRAL_USE_CHAT_COMPLETIONS: bool
 
 
+class RealtimeConfigForm(BaseModel):
+    ENABLED: bool
+    MODEL: str
+    API_BASE_URL: str
+    API_KEY: str
+    RESPONSE_MODE: str          # "streaming" or "non-streaming"
+    VISION_MODEL: str           # model for image description (must support vision)
+    BARGE_IN_ENABLED: bool      # whether barge-in interruption is active
+    BARGE_IN_THRESHOLD: float   # RMS threshold for barge-in interruption (0.0–1.0)
+    VOICE_THRESHOLD: int        # frequency bin threshold for VAD start (0–255)
+    MAX_HISTORY_TURNS: int      # max conversation turns sent to the model
+    CAMERA_INTERVAL: int        # camera frame capture interval in seconds
+
+
 class AudioConfigUpdateForm(BaseModel):
     tts: TTSConfigForm
     stt: STTConfigForm
+    realtime: Optional[RealtimeConfigForm] = None
 
 
 @router.get("/config")
 async def get_audio_config(request: Request, user=Depends(get_admin_user)):
     return {
+        "realtime": {
+            "ENABLED": request.app.state.config.REALTIME_ENABLED,
+            "MODEL": request.app.state.config.REALTIME_MODEL,
+            "API_BASE_URL": request.app.state.config.REALTIME_API_BASE_URL,
+            "API_KEY": request.app.state.config.REALTIME_API_KEY,
+            "RESPONSE_MODE": request.app.state.config.REALTIME_RESPONSE_MODE,
+            "VISION_MODEL": request.app.state.config.REALTIME_VISION_MODEL,
+            "BARGE_IN_ENABLED": request.app.state.config.REALTIME_BARGE_IN_ENABLED,
+            "BARGE_IN_THRESHOLD": request.app.state.config.REALTIME_BARGE_IN_THRESHOLD,
+            "VOICE_THRESHOLD": request.app.state.config.REALTIME_VOICE_THRESHOLD,
+            "MAX_HISTORY_TURNS": request.app.state.config.REALTIME_MAX_HISTORY_TURNS,
+            "CAMERA_INTERVAL": request.app.state.config.REALTIME_CAMERA_INTERVAL,
+        },
         "tts": {
             "OPENAI_API_BASE_URL": request.app.state.config.TTS_OPENAI_API_BASE_URL,
             "OPENAI_API_KEY": request.app.state.config.TTS_OPENAI_API_KEY,
@@ -274,6 +302,19 @@ async def update_audio_config(
         form_data.stt.MISTRAL_USE_CHAT_COMPLETIONS
     )
 
+    if form_data.realtime:
+        request.app.state.config.REALTIME_ENABLED = form_data.realtime.ENABLED
+        request.app.state.config.REALTIME_MODEL = form_data.realtime.MODEL
+        request.app.state.config.REALTIME_API_BASE_URL = form_data.realtime.API_BASE_URL
+        request.app.state.config.REALTIME_API_KEY = form_data.realtime.API_KEY
+        request.app.state.config.REALTIME_RESPONSE_MODE = form_data.realtime.RESPONSE_MODE
+        request.app.state.config.REALTIME_VISION_MODEL = form_data.realtime.VISION_MODEL
+        request.app.state.config.REALTIME_BARGE_IN_ENABLED = form_data.realtime.BARGE_IN_ENABLED
+        request.app.state.config.REALTIME_BARGE_IN_THRESHOLD = form_data.realtime.BARGE_IN_THRESHOLD
+        request.app.state.config.REALTIME_VOICE_THRESHOLD = form_data.realtime.VOICE_THRESHOLD
+        request.app.state.config.REALTIME_MAX_HISTORY_TURNS = form_data.realtime.MAX_HISTORY_TURNS
+        request.app.state.config.REALTIME_CAMERA_INTERVAL = form_data.realtime.CAMERA_INTERVAL
+
     if request.app.state.config.STT_ENGINE == "":
         request.app.state.faster_whisper_model = set_faster_whisper_model(
             form_data.stt.WHISPER_MODEL, WHISPER_MODEL_AUTO_UPDATE
@@ -282,6 +323,19 @@ async def update_audio_config(
         request.app.state.faster_whisper_model = None
 
     return {
+        "realtime": {
+            "ENABLED": request.app.state.config.REALTIME_ENABLED,
+            "MODEL": request.app.state.config.REALTIME_MODEL,
+            "API_BASE_URL": request.app.state.config.REALTIME_API_BASE_URL,
+            "API_KEY": request.app.state.config.REALTIME_API_KEY,
+            "RESPONSE_MODE": request.app.state.config.REALTIME_RESPONSE_MODE,
+            "VISION_MODEL": request.app.state.config.REALTIME_VISION_MODEL,
+            "BARGE_IN_ENABLED": request.app.state.config.REALTIME_BARGE_IN_ENABLED,
+            "BARGE_IN_THRESHOLD": request.app.state.config.REALTIME_BARGE_IN_THRESHOLD,
+            "VOICE_THRESHOLD": request.app.state.config.REALTIME_VOICE_THRESHOLD,
+            "MAX_HISTORY_TURNS": request.app.state.config.REALTIME_MAX_HISTORY_TURNS,
+            "CAMERA_INTERVAL": request.app.state.config.REALTIME_CAMERA_INTERVAL,
+        },
         "tts": {
             "ENGINE": request.app.state.config.TTS_ENGINE,
             "MODEL": request.app.state.config.TTS_MODEL,

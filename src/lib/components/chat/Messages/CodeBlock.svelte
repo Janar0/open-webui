@@ -23,6 +23,8 @@
 	import CommandLine from '$lib/components/icons/CommandLine.svelte';
 	import Cube from '$lib/components/icons/Cube.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
+	import InlineArtifact from './InlineArtifact.svelte';
+	import ChevronDown from '$lib/components/icons/ChevronDown.svelte';
 
 	const i18n = getContext('i18n');
 
@@ -46,6 +48,18 @@
 	export let className = '';
 	export let editorClassName = '';
 	export let stickyButtonsClassName = 'top-0';
+
+	// Artifact detection for inline rendering of HTML/SVG code blocks
+	$: isArtifact = ['html', 'svg'].includes(lang?.toLowerCase()) && code.trim().length > 0;
+	$: artifactReady =
+		isArtifact && ((token?.raw ?? '').slice(-4).includes('```') || (token?.raw ?? '') === '');
+
+	// Auto-collapse source code for artifacts on first detection
+	let artifactInitialized = false;
+	$: if (isArtifact && !artifactInitialized) {
+		collapsed = true;
+		artifactInitialized = true;
+	}
 
 	let pyodideWorker = null;
 
@@ -338,7 +352,10 @@
 	};
 
 	const render = async () => {
-		onUpdate(token);
+		// Don't trigger side panel artifact detection for inline artifacts
+		if (!isArtifact) {
+			onUpdate(token);
+		}
 		if (lang === 'mermaid' && (token?.raw ?? '').slice(-4).includes('```')) {
 			try {
 				renderHTML = await renderMermaid(code);
@@ -419,11 +436,81 @@
 </script>
 
 <div>
-	<div
-		class="relative {className} flex flex-col rounded-2xl border border-gray-100/30 dark:border-gray-850/30 my-0.5"
-		dir="ltr"
-	>
-		{#if ['mermaid', 'vega', 'vega-lite'].includes(lang)}
+	{#if isArtifact}
+		<!-- Artifact mode: collapsible source code + inline preview -->
+		<!-- svelte-ignore a11y-no-static-element-interactions -->
+		<!-- svelte-ignore a11y-click-events-have-key-events -->
+		<div
+			class="w-fit text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition cursor-pointer"
+			on:pointerup={() => {
+				collapsed = !collapsed;
+			}}
+		>
+			<div class="flex items-center gap-2 text-xs py-0.5">
+				<div class="flex self-center translate-y-[1px]">
+					{#if collapsed}
+						<ChevronDown strokeWidth="3.5" className="size-3.5" />
+					{:else}
+						<ChevronUp strokeWidth="3.5" className="size-3.5" />
+					{/if}
+				</div>
+				<span>
+					{#if artifactReady}
+						{$i18n.t('Source')} ({lang}, {code.split('\n').length}
+						{$i18n.t('lines')})
+					{:else}
+						{$i18n.t('Creating')} {lang.toUpperCase()}...
+					{/if}
+				</span>
+				<button
+					class="copy-code-button bg-none border-none transition rounded-md px-1.5 py-0.5 hover:bg-gray-100 dark:hover:bg-gray-800"
+					on:click|stopPropagation={copyCode}
+				>
+					{copied ? $i18n.t('Copied') : $i18n.t('Copy')}
+				</button>
+			</div>
+		</div>
+
+		{#if !collapsed}
+			<div
+				class="relative {className} flex flex-col rounded-2xl border border-gray-100/30 dark:border-gray-850/30 my-0.5"
+				dir="ltr"
+			>
+				<div class="language-{lang} rounded-2xl overflow-hidden">
+					{#if edit}
+						<CodeEditor
+							value={code}
+							{id}
+							{lang}
+							onSave={() => {
+								saveCode();
+							}}
+							onChange={(value) => {
+								_code = value;
+							}}
+						/>
+					{:else}
+						<pre
+							class="hljs p-4 px-5 overflow-x-auto rounded-2xl"
+							><code
+								class="language-{lang} whitespace-pre text-sm"
+								>{@html hljs.highlightAuto(code, hljs.getLanguage(lang)?.aliases).value ||
+									code}</code
+							></pre>
+					{/if}
+				</div>
+			</div>
+		{/if}
+
+		{#if artifactReady}
+			<InlineArtifact {code} {lang} {id} />
+		{/if}
+	{:else}
+		<div
+			class="relative {className} flex flex-col rounded-2xl border border-gray-100/30 dark:border-gray-850/30 my-0.5"
+			dir="ltr"
+		>
+			{#if ['mermaid', 'vega', 'vega-lite'].includes(lang)}
 			{#if renderHTML}
 				<SvgPanZoom
 					className=" rounded-2xl max-h-fit overflow-hidden"
@@ -616,5 +703,6 @@
 				{/if}
 			{/if}
 		{/if}
-	</div>
+		</div>
+	{/if}
 </div>

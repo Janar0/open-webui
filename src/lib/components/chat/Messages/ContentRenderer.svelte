@@ -173,12 +173,14 @@
 		{onSave}
 		onUpdate={async (token) => {
 			const { lang, text: code } = token;
+			const isReady = (token?.raw ?? '').slice(-4).includes('```') || (token?.raw ?? '') === '';
 
 			if (
 				($settings?.detectArtifacts ?? true) &&
 				(['html', 'svg'].includes(lang) || (lang === 'xml' && code.includes('svg'))) &&
 				!$mobile &&
-				$chatId
+				$chatId &&
+				isReady
 			) {
 				await tick();
 				showArtifacts.set(true);

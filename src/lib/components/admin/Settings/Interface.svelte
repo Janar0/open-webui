@@ -31,7 +31,8 @@
 		ENABLE_RETRIEVAL_QUERY_GENERATION: true,
 		QUERY_GENERATION_PROMPT_TEMPLATE: '',
 		TOOLS_FUNCTION_CALLING_PROMPT_TEMPLATE: '',
-		VOICE_MODE_PROMPT_TEMPLATE: ''
+		VOICE_MODE_PROMPT_TEMPLATE: '',
+		ARTIFACT_PROMPT: null
 	};
 
 	const updateInterfaceHandler = async () => {
@@ -414,6 +415,24 @@
 					</Tooltip>
 				</div>
 			</div>
+		</div>
+
+		<div class="mb-2.5">
+			<div class="flex justify-between items-center mb-1">
+				<div class=" mb-1 text-xs font-medium">{$i18n.t('Artifact Instructions')}</div>
+				<button
+					class="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition"
+					type="button"
+					on:click={() => {
+						taskConfig.ARTIFACT_PROMPT = null;
+					}}
+				>{$i18n.t('Reset to Default')}</button>
+			</div>
+
+			<Textarea
+				bind:value={taskConfig.ARTIFACT_PROMPT}
+				placeholder={$i18n.t('Leave empty to use the default prompt, or enter a custom prompt')}
+			/>
 		</div>
 
 		<div class="flex justify-end text-sm font-medium">

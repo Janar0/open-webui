@@ -28,6 +28,7 @@
 
 	import Controls from './Controls/Controls.svelte';
 	import CallOverlay from './MessageInput/CallOverlay.svelte';
+	import RealtimeCallOverlay from './MessageInput/RealtimeCallOverlay.svelte';
 	import Drawer from '../common/Drawer.svelte';
 	import Artifacts from './Artifacts.svelte';
 	import Embeds from './ChatControls/Embeds.svelte';
@@ -271,15 +272,23 @@
 					<div
 						class="h-full max-h-[100dvh] bg-white text-gray-700 dark:bg-black dark:text-gray-300 flex justify-center"
 					>
-						<CallOverlay
-							bind:files
-							{submitPrompt}
-							{stopResponse}
-							{modelId}
-							{chatId}
-							{eventTarget}
-							on:close={() => showControls.set(false)}
-						/>
+						{#if $config?.features?.enable_realtime}
+							<RealtimeCallOverlay
+								{modelId}
+								{chatId}
+								on:close={() => showControls.set(false)}
+							/>
+						{:else}
+							<CallOverlay
+								bind:files
+								{submitPrompt}
+								{stopResponse}
+								{modelId}
+								{chatId}
+								{eventTarget}
+								on:close={() => showControls.set(false)}
+							/>
+						{/if}
 					</div>
 				{:else if $showEmbeds}
 					<Embeds />
@@ -417,15 +426,23 @@
 				>
 					{#if $showCallOverlay}
 						<div class="w-full h-full flex justify-center">
-							<CallOverlay
-								bind:files
-								{submitPrompt}
-								{stopResponse}
-								{modelId}
-								{chatId}
-								{eventTarget}
-								on:close={() => showControls.set(false)}
-							/>
+							{#if $config?.features?.enable_realtime}
+								<RealtimeCallOverlay
+									{modelId}
+									{chatId}
+									on:close={() => showControls.set(false)}
+								/>
+							{:else}
+								<CallOverlay
+									bind:files
+									{submitPrompt}
+									{stopResponse}
+									{modelId}
+									{chatId}
+									{eventTarget}
+									on:close={() => showControls.set(false)}
+								/>
+							{/if}
 						</div>
 					{:else if $showEmbeds}
 						<Embeds overlay={dragged} />

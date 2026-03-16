@@ -1,6 +1,9 @@
 x.py
 yarn.lock
 .DS_Store
+.webui_secret_key
+backend/open_webui_data.zip
+.claude/
 node_modules
 /build
 /.svelte-kit

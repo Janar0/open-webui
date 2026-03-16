@@ -106,10 +106,12 @@
 	import Sidebar from '../icons/Sidebar.svelte';
 	import Image from '../common/Image.svelte';
 	import { getBanners } from '$lib/apis/configs';
+	import { getTaskConfig } from '$lib/apis';
 
 	export let chatIdProp = '';
 
 	let loading = true;
+	let adminArtifactPrompt: string | null = null;
 
 	const eventTarget = new EventTarget();
 	let controlPane: Pane | undefined;
@@ -629,6 +631,9 @@
 	onMount(() => {
 		loading = true;
 		console.log('mounted');
+		getTaskConfig(localStorage.token).then((cfg) => {
+			adminArtifactPrompt = cfg?.ARTIFACT_PROMPT ?? null;
+		});
 		window.addEventListener('message', onMessageHandler);
 		$socket?.on('events', chatEventHandler);
 
@@ -2076,11 +2081,16 @@
 			params?.stream_response ??
 			true;
 
+		const _artifactPrompt = adminArtifactPrompt || $settings?.artifactPrompt || '';
+		const _artifactSuffix =
+			($settings?.detectArtifacts ?? true) && _artifactPrompt
+				? `\n\n${_artifactPrompt}`
+				: '';
 		let messages = [
-			params?.system || $settings.system
+			(params?.system || $settings.system || _artifactSuffix)
 				? {
 						role: 'system',
-						content: `${params?.system ?? $settings?.system ?? ''}`
+						content: `${params?.system ?? $settings?.system ?? ''}${_artifactSuffix}`
 					}
 				: undefined,
 			..._messages.map((message) => ({

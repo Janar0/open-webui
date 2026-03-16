@@ -2146,6 +2146,15 @@ TOOLS_FUNCTION_CALLING_PROMPT_TEMPLATE = PersistentConfig(
     os.environ.get("TOOLS_FUNCTION_CALLING_PROMPT_TEMPLATE", ""),
 )
 
+ARTIFACT_PROMPT = PersistentConfig(
+    "ARTIFACT_PROMPT",
+    "task.artifact_prompt",
+    os.environ.get(
+        "ARTIFACT_PROMPT",
+        "Output HTML/SVG as an artifact only when the user explicitly requests it or it useful for better answer. Match the chat background (dark or light). short and minimal style, one time usage artifact.",
+    ),
+)
+
 
 DEFAULT_TOOLS_FUNCTION_CALLING_PROMPT_TEMPLATE = """Available Tools: {{TOOLS}}
 
@@ -4312,4 +4321,83 @@ LDAP_ATTRIBUTE_FOR_GROUPS = PersistentConfig(
     "LDAP_ATTRIBUTE_FOR_GROUPS",
     "ldap.server.attribute_for_groups",
     os.environ.get("LDAP_ATTRIBUTE_FOR_GROUPS", "memberOf"),
+)
+
+
+####################################
+# Advanced Voice Mode (Realtime)
+####################################
+
+REALTIME_ENABLED = PersistentConfig(
+    "REALTIME_ENABLED",
+    "audio.realtime.enabled",
+    os.environ.get("REALTIME_ENABLED", "False").lower() == "true",
+)
+
+REALTIME_MODEL = PersistentConfig(
+    "REALTIME_MODEL",
+    "audio.realtime.model",
+    os.environ.get("REALTIME_MODEL", "openai/gpt-audio-mini"),
+)
+
+REALTIME_API_BASE_URL = PersistentConfig(
+    "REALTIME_API_BASE_URL",
+    "audio.realtime.api_base_url",
+    os.environ.get("REALTIME_API_BASE_URL", "https://openrouter.ai/api/v1"),
+)
+
+REALTIME_API_KEY = PersistentConfig(
+    "REALTIME_API_KEY",
+    "audio.realtime.api_key",
+    os.environ.get("REALTIME_API_KEY", ""),
+)
+
+# "streaming" = OpenRouter SSE format (stream: true, delta.audio.data)
+# "non-streaming" = OpenAI direct format (stream: false, message.audio.data)
+REALTIME_RESPONSE_MODE = PersistentConfig(
+    "REALTIME_RESPONSE_MODE",
+    "audio.realtime.response_mode",
+    os.environ.get("REALTIME_RESPONSE_MODE", "streaming"),
+)
+
+# Vision model used to describe camera frames (must support image input)
+REALTIME_VISION_MODEL = PersistentConfig(
+    "REALTIME_VISION_MODEL",
+    "audio.realtime.vision_model",
+    os.environ.get("REALTIME_VISION_MODEL", "google/gemini-2.5-flash"),
+)
+
+# Whether barge-in (interrupting AI while speaking) is enabled
+REALTIME_BARGE_IN_ENABLED = PersistentConfig(
+    "REALTIME_BARGE_IN_ENABLED",
+    "audio.realtime.barge_in_enabled",
+    os.environ.get("REALTIME_BARGE_IN_ENABLED", "True").lower() == "true",
+)
+
+# RMS amplitude threshold for barge-in (0.0–1.0); higher = less sensitive
+REALTIME_BARGE_IN_THRESHOLD = PersistentConfig(
+    "REALTIME_BARGE_IN_THRESHOLD",
+    "audio.realtime.barge_in_threshold",
+    float(os.environ.get("REALTIME_BARGE_IN_THRESHOLD", "0.06")),
+)
+
+# Frequency bin threshold for VAD start (0–255 scale)
+REALTIME_VOICE_THRESHOLD = PersistentConfig(
+    "REALTIME_VOICE_THRESHOLD",
+    "audio.realtime.voice_threshold",
+    int(os.environ.get("REALTIME_VOICE_THRESHOLD", "12")),
+)
+
+# Max conversation history turns sent to the audio model (context optimization)
+REALTIME_MAX_HISTORY_TURNS = PersistentConfig(
+    "REALTIME_MAX_HISTORY_TURNS",
+    "audio.realtime.max_history_turns",
+    int(os.environ.get("REALTIME_MAX_HISTORY_TURNS", "8")),
+)
+
+# Camera frame capture interval in seconds (how often to grab a frame)
+REALTIME_CAMERA_INTERVAL = PersistentConfig(
+    "REALTIME_CAMERA_INTERVAL",
+    "audio.realtime.camera_interval",
+    int(os.environ.get("REALTIME_CAMERA_INTERVAL", "2")),
 )

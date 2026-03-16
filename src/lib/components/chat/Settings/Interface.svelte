@@ -44,6 +44,9 @@
 	let highContrastMode = false;
 
 	let detectArtifacts = true;
+	const DEFAULT_ARTIFACT_PROMPT =
+		'Output concise HTML/SVG (≤200 lines). Clean minimal design, no boilerplate. Match the chat background color.';
+	let artifactPrompt = DEFAULT_ARTIFACT_PROMPT;
 	let displayMultiModelResponsesInTabs = false;
 
 	let richTextInput = true;
@@ -204,6 +207,7 @@
 		highContrastMode = $settings?.highContrastMode ?? false;
 
 		detectArtifacts = $settings?.detectArtifacts ?? true;
+		artifactPrompt = $settings?.artifactPrompt ?? DEFAULT_ARTIFACT_PROMPT;
 		responseAutoCopy = $settings?.responseAutoCopy ?? false;
 
 		showUsername = $settings?.showUsername ?? false;
@@ -949,6 +953,49 @@
 
 			<div>
 				<div class=" py-0.5 flex w-full justify-between">
+					<div id="detect-artifacts-label" class=" self-center text-xs">
+						{$i18n.t('Inline Artifact Preview')}
+					</div>
+
+					<div class="flex items-center gap-2 p-1">
+						<Switch
+							ariaLabelledbyId="detect-artifacts-label"
+							tooltip={true}
+							bind:state={detectArtifacts}
+							on:change={() => {
+								saveSettings({ detectArtifacts });
+							}}
+						/>
+					</div>
+				</div>
+			</div>
+
+			{#if detectArtifacts}
+				<div>
+					<div class="py-0.5 flex w-full justify-between">
+						<div class="self-center text-xs">{$i18n.t('Artifact Prompt')}</div>
+						<button
+							class="text-xs text-gray-500 underline"
+							type="button"
+							on:click={() => {
+								artifactPrompt = DEFAULT_ARTIFACT_PROMPT;
+								saveSettings({ artifactPrompt });
+							}}>{$i18n.t('Reset')}</button
+						>
+					</div>
+					<textarea
+						class="w-full mt-1 text-xs bg-gray-50 dark:bg-gray-850 rounded-lg px-3 py-2 outline-none resize-none"
+						rows="3"
+						bind:value={artifactPrompt}
+						on:change={() => {
+							saveSettings({ artifactPrompt });
+						}}
+					></textarea>
+				</div>
+			{/if}
+
+			<div>
+				<div class=" py-0.5 flex w-full justify-between">
 					<div id="always-expand-label" class=" self-center text-xs">
 						{$i18n.t('Always Expand Details')}
 					</div>
@@ -1219,28 +1266,8 @@
 				</div>
 			</div>
 
-			<div class=" my-2 text-sm font-medium">{$i18n.t('Artifacts')}</div>
 
-			<div>
-				<div class=" py-0.5 flex w-full justify-between">
-					<div id="detect-artifacts-label" class=" self-center text-xs">
-						{$i18n.t('Detect Artifacts Automatically')}
-					</div>
-
-					<div class="flex items-center gap-2 p-1">
-						<Switch
-							ariaLabelledbyId="detect-artifacts-label"
-							tooltip={true}
-							bind:state={detectArtifacts}
-							on:change={() => {
-								saveSettings({ detectArtifacts });
-							}}
-						/>
-					</div>
-				</div>
-			</div>
-
-			<div>
+	<div>
 				<div class=" py-0.5 flex w-full justify-between">
 					<div id="iframe-sandbox-allow-same-origin-label" class=" self-center text-xs">
 						{$i18n.t('iframe Sandbox Allow Same Origin')}
@@ -1318,7 +1345,7 @@
 				</div>
 			</div>
 
-			<div class=" my-2 text-sm font-medium">{$i18n.t('File')}</div>
+		<div class=" my-2 text-sm font-medium">{$i18n.t('File')}</div>
 
 			<div>
 				<div class=" py-0.5 flex w-full justify-between">
