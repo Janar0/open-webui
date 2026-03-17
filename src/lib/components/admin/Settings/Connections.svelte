@@ -6,6 +6,11 @@
 
 	import { getOllamaConfig, updateOllamaConfig } from '$lib/apis/ollama';
 	import { getOpenAIConfig, updateOpenAIConfig, getOpenAIModels } from '$lib/apis/openai';
+	import {
+		getOpenRouterConfig,
+		updateOpenRouterConfig,
+		verifyOpenRouterConnection
+	} from '$lib/apis/openrouter';
 	import { getModels as _getModels, getBackendConfig } from '$lib/apis';
 	import { getConnectionsConfig, setConnectionsConfig } from '$lib/apis/configs';
 
@@ -42,6 +47,15 @@
 
 	let ENABLE_OPENAI_API: null | boolean = null;
 	let ENABLE_OLLAMA_API: null | boolean = null;
+	let ENABLE_OPENROUTER_API: null | boolean = null;
+
+	let OPENROUTER_API_BASE_URL = 'https://openrouter.ai/api/v1';
+	let OPENROUTER_API_KEY = '';
+	let OPENROUTER_API_CONFIG: Record<string, any> = {};
+
+	let openrouterVerifying = false;
+	let openrouterVerified: boolean | null = null;
+	let showOpenRouterKey = false;
 
 	let connectionsConfig = null;
 
@@ -106,6 +120,46 @@
 		}
 	};
 
+	const updateOpenRouterHandler = async () => {
+		if (ENABLE_OPENROUTER_API !== null) {
+			OPENROUTER_API_BASE_URL = OPENROUTER_API_BASE_URL.replace(/\/$/, '');
+
+			const res = await updateOpenRouterConfig(localStorage.token, {
+				ENABLE_OPENROUTER_API: ENABLE_OPENROUTER_API,
+				OPENROUTER_API_BASE_URL: OPENROUTER_API_BASE_URL,
+				OPENROUTER_API_KEY: OPENROUTER_API_KEY,
+				OPENROUTER_API_CONFIG: OPENROUTER_API_CONFIG
+			}).catch((error) => {
+				toast.error(`${error}`);
+			});
+
+			if (res) {
+				toast.success($i18n.t('OpenRouter API settings updated'));
+				await models.set(await getModels());
+			}
+		}
+	};
+
+	const verifyOpenRouterHandler = async () => {
+		openrouterVerifying = true;
+		openrouterVerified = null;
+		try {
+			const res = await verifyOpenRouterConnection(
+				localStorage.token,
+				OPENROUTER_API_BASE_URL,
+				OPENROUTER_API_KEY
+			);
+			if (res) {
+				openrouterVerified = true;
+				toast.success($i18n.t('OpenRouter connection verified'));
+			}
+		} catch (error) {
+			openrouterVerified = false;
+			toast.error(`${error}`);
+		}
+		openrouterVerifying = false;
+	};
+
 	const updateConnectionsHandler = async () => {
 		const res = await setConnectionsConfig(localStorage.token, connectionsConfig).catch((error) => {
 			toast.error(`${error}`);
@@ -140,6 +194,7 @@
 		if ($user?.role === 'admin') {
 			let ollamaConfig = {};
 			let openaiConfig = {};
+			let openrouterConfig = {};
 
 			await Promise.all([
 				(async () => {
@@ -149,12 +204,19 @@
 					openaiConfig = await getOpenAIConfig(localStorage.token);
 				})(),
 				(async () => {
+					openrouterConfig = await getOpenRouterConfig(localStorage.token);
+				})(),
+				(async () => {
 					connectionsConfig = await getConnectionsConfig(localStorage.token);
 				})()
 			]);
 
 			ENABLE_OPENAI_API = openaiConfig.ENABLE_OPENAI_API;
 			ENABLE_OLLAMA_API = ollamaConfig.ENABLE_OLLAMA_API;
+			ENABLE_OPENROUTER_API = openrouterConfig.ENABLE_OPENROUTER_API;
+			OPENROUTER_API_BASE_URL = openrouterConfig.OPENROUTER_API_BASE_URL || 'https://openrouter.ai/api/v1';
+			OPENROUTER_API_KEY = openrouterConfig.OPENROUTER_API_KEY || '';
+			OPENROUTER_API_CONFIG = openrouterConfig.OPENROUTER_API_CONFIG || {};
 
 			OPENAI_API_BASE_URLS = openaiConfig.OPENAI_API_BASE_URLS;
 			OPENAI_API_KEYS = openaiConfig.OPENAI_API_KEYS;
@@ -197,6 +259,7 @@
 	const submitHandler = async () => {
 		updateOpenAIHandler();
 		updateOllamaHandler();
+		updateOpenRouterHandler();
 
 		dispatch('save');
 
@@ -217,7 +280,7 @@
 
 <form class="flex flex-col h-full justify-between text-sm" on:submit|preventDefault={submitHandler}>
 	<div class=" overflow-y-scroll scrollbar-hidden h-full">
-		{#if ENABLE_OPENAI_API !== null && ENABLE_OLLAMA_API !== null && connectionsConfig !== null}
+		{#if ENABLE_OPENAI_API !== null && ENABLE_OLLAMA_API !== null && ENABLE_OPENROUTER_API !== null && connectionsConfig !== null}
 			<div class="mb-3.5">
 				<div class=" mt-0.5 mb-2.5 text-base font-medium">{$i18n.t('General')}</div>
 
@@ -356,6 +419,82 @@
 								>
 									{$i18n.t('Click here for help.')}
 								</a>
+							</div>
+						</div>
+					{/if}
+				</div>
+
+				<div class="my-2">
+					<div class="flex justify-between items-center text-sm mb-2">
+						<div class="font-medium">{$i18n.t('OpenRouter API')}</div>
+
+						<div class="mt-1">
+							<Switch
+								bind:state={ENABLE_OPENROUTER_API}
+								on:change={async () => {
+									updateOpenRouterHandler();
+								}}
+							/>
+						</div>
+					</div>
+
+					{#if ENABLE_OPENROUTER_API}
+						<div class="space-y-2">
+							<div>
+								<div class="font-medium text-xs mb-1">{$i18n.t('API Base URL')}</div>
+								<input
+									class="w-full rounded-lg py-2 px-4 text-sm bg-gray-50 dark:text-gray-300 dark:bg-gray-850 outline-hidden"
+									placeholder="https://openrouter.ai/api/v1"
+									bind:value={OPENROUTER_API_BASE_URL}
+								/>
+							</div>
+
+							<div>
+								<div class="font-medium text-xs mb-1">{$i18n.t('API Key')}</div>
+								<div class="flex gap-2">
+									<div class="flex-1 relative">
+										<input
+											class="w-full rounded-lg py-2 px-4 pr-10 text-sm bg-gray-50 dark:text-gray-300 dark:bg-gray-850 outline-hidden"
+											placeholder={$i18n.t('Enter OpenRouter API Key')}
+											bind:value={OPENROUTER_API_KEY}
+											type={showOpenRouterKey ? 'text' : 'password'}
+										/>
+										<button
+											class="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500 dark:text-gray-400"
+											type="button"
+											on:click={() => {
+												showOpenRouterKey = !showOpenRouterKey;
+											}}
+										>
+											{showOpenRouterKey ? '🙈' : '👁'}
+										</button>
+									</div>
+
+									<Tooltip content={$i18n.t('Verify Connection')}>
+										<button
+											class="px-3 py-2 text-sm rounded-lg {openrouterVerified === true
+												? 'bg-green-500/20 text-green-700 dark:text-green-300'
+												: openrouterVerified === false
+													? 'bg-red-500/20 text-red-700 dark:text-red-300'
+													: 'bg-gray-50 dark:bg-gray-850 text-gray-600 dark:text-gray-300'} hover:opacity-80 transition"
+											type="button"
+											on:click={verifyOpenRouterHandler}
+											disabled={openrouterVerifying}
+										>
+											{#if openrouterVerifying}
+												<Spinner className="size-4" />
+											{:else}
+												<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4">
+													<path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd" />
+												</svg>
+											{/if}
+										</button>
+									</Tooltip>
+								</div>
+							</div>
+
+							<div class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+								{$i18n.t('OpenRouter provides access to 400+ AI models with automatic fallback, provider routing, and unified pricing.')}
 							</div>
 						</div>
 					{/if}
