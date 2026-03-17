@@ -487,8 +487,42 @@ class SafePlaywrightURLLoader(PlaywrightURLLoader, RateLimitMixin, URLProcessing
         self.trust_env = trust_env
         self.playwright_timeout = playwright_timeout
 
+    # Realistic user-agent for stealth browsing
+    _STEALTH_USER_AGENT = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/131.0.0.0 Safari/537.36"
+    )
+
+    def _apply_stealth(self, page):
+        """Apply stealth settings to avoid bot detection."""
+        # Override navigator.webdriver to return false
+        page.add_init_script(
+            """
+            Object.defineProperty(navigator, 'webdriver', {get: () => false});
+            Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
+            Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+            window.chrome = {runtime: {}};
+            """
+        )
+
+    def _get_launch_args(self):
+        """Get browser launch args with stealth flags."""
+        return [
+            "--disable-blink-features=AutomationControlled",
+            "--disable-features=IsolateOrigins,site-per-process",
+            "--no-first-run",
+        ]
+
+    def _extract_raw_html(self, page) -> str:
+        """Extract raw HTML from page for image extraction."""
+        try:
+            return page.content()
+        except Exception:
+            return ""
+
     def lazy_load(self) -> Iterator[Document]:
-        """Safely load URLs synchronously with support for remote browser."""
+        """Safely load URLs synchronously with support for remote browser and stealth."""
         from playwright.sync_api import sync_playwright
 
         with sync_playwright() as p:
@@ -496,19 +530,39 @@ class SafePlaywrightURLLoader(PlaywrightURLLoader, RateLimitMixin, URLProcessing
             if self.playwright_ws_url:
                 browser = p.chromium.connect(self.playwright_ws_url)
             else:
-                browser = p.chromium.launch(headless=self.headless, proxy=self.proxy)
+                browser = p.chromium.launch(
+                    headless=self.headless,
+                    proxy=self.proxy,
+                    args=self._get_launch_args(),
+                )
 
             for url in self.urls:
                 try:
                     self._safe_process_url_sync(url)
-                    page = browser.new_page()
-                    response = page.goto(url, timeout=self.playwright_timeout)
+                    context = browser.new_context(
+                        user_agent=self._STEALTH_USER_AGENT,
+                    )
+                    page = context.new_page()
+                    self._apply_stealth(page)
+                    response = page.goto(
+                        url,
+                        timeout=self.playwright_timeout,
+                        wait_until="domcontentloaded",
+                    )
                     if response is None:
                         raise ValueError(f"page.goto() returned None for url {url}")
 
+                    # Wait for network to settle for JS-heavy pages
+                    try:
+                        page.wait_for_load_state("networkidle", timeout=5000)
+                    except Exception:
+                        pass  # Best effort — don't fail if networkidle times out
+
+                    raw_html = self._extract_raw_html(page)
                     text = self.evaluator.evaluate(page, browser, response)
-                    metadata = {"source": url}
+                    metadata = {"source": url, "raw_html": raw_html}
                     yield Document(page_content=text, metadata=metadata)
+                    context.close()
                 except Exception as e:
                     if self.continue_on_failure:
                         log.exception(f"Error loading {url}: {e}")
@@ -517,7 +571,7 @@ class SafePlaywrightURLLoader(PlaywrightURLLoader, RateLimitMixin, URLProcessing
             browser.close()
 
     async def alazy_load(self) -> AsyncIterator[Document]:
-        """Safely load URLs asynchronously with support for remote browser."""
+        """Safely load URLs asynchronously with support for remote browser and stealth."""
         from playwright.async_api import async_playwright
 
         async with async_playwright() as p:
@@ -526,20 +580,38 @@ class SafePlaywrightURLLoader(PlaywrightURLLoader, RateLimitMixin, URLProcessing
                 browser = await p.chromium.connect(self.playwright_ws_url)
             else:
                 browser = await p.chromium.launch(
-                    headless=self.headless, proxy=self.proxy
+                    headless=self.headless,
+                    proxy=self.proxy,
+                    args=self._get_launch_args(),
                 )
 
             for url in self.urls:
                 try:
                     await self._safe_process_url(url)
-                    page = await browser.new_page()
-                    response = await page.goto(url, timeout=self.playwright_timeout)
+                    context = await browser.new_context(
+                        user_agent=self._STEALTH_USER_AGENT,
+                    )
+                    page = await context.new_page()
+                    self._apply_stealth(page)
+                    response = await page.goto(
+                        url,
+                        timeout=self.playwright_timeout,
+                        wait_until="domcontentloaded",
+                    )
                     if response is None:
                         raise ValueError(f"page.goto() returned None for url {url}")
 
+                    # Wait for network to settle for JS-heavy pages
+                    try:
+                        await page.wait_for_load_state("networkidle", timeout=5000)
+                    except Exception:
+                        pass  # Best effort
+
+                    raw_html = await page.content()
                     text = await self.evaluator.evaluate_async(page, browser, response)
-                    metadata = {"source": url}
+                    metadata = {"source": url, "raw_html": raw_html}
                     yield Document(page_content=text, metadata=metadata)
+                    await context.close()
                 except Exception as e:
                     if self.continue_on_failure:
                         log.exception(f"Error loading {url}: {e}")
@@ -624,8 +696,9 @@ class SafeWebBaseLoader(WebBaseLoader):
                 soup = self._scrape(path, bs_kwargs=self.bs_kwargs)
                 text = soup.get_text(**self.bs_get_text_kwargs)
 
-                # Build metadata
+                # Build metadata, include raw HTML for image extraction
                 metadata = extract_metadata(soup, path)
+                metadata["raw_html"] = str(soup)
 
                 yield Document(page_content=text, metadata=metadata)
             except Exception as e:
@@ -637,7 +710,7 @@ class SafeWebBaseLoader(WebBaseLoader):
         results = await self.ascrape_all(self.web_paths)
         for path, soup in zip(self.web_paths, results):
             text = soup.get_text(**self.bs_get_text_kwargs)
-            metadata = {"source": path}
+            metadata = {"source": path, "raw_html": str(soup)}
             if title := soup.find("title"):
                 metadata["title"] = title.get_text()
             if description := soup.find("meta", attrs={"name": "description"}):

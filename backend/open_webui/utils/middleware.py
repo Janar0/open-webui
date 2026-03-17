@@ -225,7 +225,7 @@ def get_citation_source_from_tool_result(
     Returns a list of sources (usually one, but query_knowledge_files may return multiple).
     """
     _EXPECTS_LIST = {"search_web", "query_knowledge_files"}
-    _EXPECTS_DICT = {"view_knowledge_file"}
+    _EXPECTS_DICT = {"view_knowledge_file", "deep_search"}
 
     try:
         try:
@@ -300,7 +300,11 @@ def get_citation_source_from_tool_result(
 
         elif tool_name == "fetch_url":
             url = tool_params.get("url", "")
-            content = tool_result if isinstance(tool_result, str) else str(tool_result)
+            # fetch_url may return JSON dict or plain text
+            if isinstance(tool_result, dict):
+                content = tool_result.get("content", str(tool_result))
+            else:
+                content = tool_result if isinstance(tool_result, str) else str(tool_result)
             snippet = content[:500] + ("..." if len(content) > 500 else "")
 
             return [
@@ -316,6 +320,29 @@ def get_citation_source_from_tool_result(
                     ],
                 }
             ]
+
+        elif tool_name == "deep_search":
+            # deep_search returns JSON: {"query", "sources_read": [...], ...}
+            if not isinstance(tool_result, dict):
+                return []
+            sources_read = tool_result.get("sources_read", [])
+            documents = []
+            metadata = []
+            for src in sources_read:
+                url = src.get("url", "")
+                title = src.get("title", url)
+                content = src.get("content", "")
+                snippet = content[:500] + ("..." if len(content) > 500 else "")
+                documents.append(snippet)
+                metadata.append({"source": url, "name": title, "url": url})
+
+            return [
+                {
+                    "source": {"name": "deep_search", "id": "deep_search"},
+                    "document": documents,
+                    "metadata": metadata,
+                }
+            ] if documents else []
 
         elif tool_name == "query_knowledge_files":
             chunks = tool_result
@@ -4384,6 +4411,7 @@ async def streaming_chat_response_handler(response, ctx):
                             in [
                                 "search_web",
                                 "fetch_url",
+                                "deep_search",
                                 "view_knowledge_file",
                                 "query_knowledge_files",
                             ]

@@ -46,6 +46,12 @@ def search_brave(
             link=result["url"],
             title=result.get("title"),
             snippet=result.get("description"),
+            thumbnail_url=(
+                result.get("thumbnail", {}).get("src")
+                if isinstance(result.get("thumbnail"), dict)
+                else None
+            ),
+            published_date=result.get("page_age"),
         )
         for result in results[:count]
     ]

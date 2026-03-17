@@ -152,23 +152,41 @@ async def search_web(
     count: int = 5,
     __request__: Request = None,
     __user__: dict = None,
+    __event_emitter__: callable = None,
+    __chat_id__: str = None,
+    __message_id__: str = None,
 ) -> str:
     """
     Search the public web for information. Best for current events, external references,
-    or topics not covered in internal documents.
+    or topics not covered in internal documents. Returns results with titles, links,
+    snippets, and image thumbnails when available.
 
     :param query: The search query to look up
     :param count: Number of results to return (default: 5)
-    :return: JSON with search results containing title, link, and snippet for each result
+    :return: JSON with search results containing title, link, snippet, and image URLs
     """
     if __request__ is None:
         return json.dumps({"error": "Request context not available"})
 
     try:
+        # Emit search-in-progress status
+        if __event_emitter__:
+            await __event_emitter__(
+                {
+                    "type": "status",
+                    "data": {
+                        "action": "web_search",
+                        "description": f"Searching: {query}",
+                        "done": False,
+                        "urls": [],
+                    },
+                }
+            )
+
         engine = __request__.app.state.config.WEB_SEARCH_ENGINE
         user = UserModel(**__user__) if __user__ else None
 
-        # Use admin-configured result count if configured, falling back to model-provided count of provided, else default to 5
+        # Use admin-configured result count if configured, falling back to model-provided count
         count = __request__.app.state.config.WEB_SEARCH_RESULT_COUNT or count
 
         results = await asyncio.to_thread(_search_web, __request__, engine, query, user)
@@ -176,8 +194,54 @@ async def search_web(
         # Limit results
         results = results[:count] if results else []
 
+        # Emit search-done status with found URLs
+        if __event_emitter__ and results:
+            await __event_emitter__(
+                {
+                    "type": "status",
+                    "data": {
+                        "action": "web_search",
+                        "description": f"Found {len(results)} results",
+                        "done": True,
+                        "urls": [r.link for r in results],
+                    },
+                }
+            )
+
+        # Collect image URLs from search results and emit them for inline display
+        image_files = []
+        for r in results:
+            img = r.image_url or r.thumbnail_url
+            if img:
+                image_files.append({"type": "image", "url": img})
+
+        if image_files and __chat_id__ and __message_id__:
+            db_files = Chats.add_message_files_by_id_and_message_id(
+                __chat_id__, __message_id__, image_files
+            )
+            if db_files is not None:
+                image_files = db_files
+
+        if image_files and __event_emitter__:
+            await __event_emitter__(
+                {
+                    "type": "chat:message:files",
+                    "data": {"files": image_files},
+                }
+            )
+
         return json.dumps(
-            [{"title": r.title, "link": r.link, "snippet": r.snippet} for r in results],
+            [
+                {
+                    "title": r.title,
+                    "link": r.link,
+                    "snippet": r.snippet,
+                    **({"image_url": r.image_url} if r.image_url else {}),
+                    **({"thumbnail_url": r.thumbnail_url} if r.thumbnail_url else {}),
+                    **({"published_date": r.published_date} if r.published_date else {}),
+                }
+                for r in results
+            ],
             ensure_ascii=False,
         )
     except Exception as e:
@@ -185,31 +249,340 @@ async def search_web(
         return json.dumps({"error": str(e)})
 
 
+def _extract_images_from_html(html_content: str, base_url: str) -> list[dict]:
+    """Extract meaningful images from HTML content, filtering out icons/trackers."""
+    try:
+        from bs4 import BeautifulSoup
+        from urllib.parse import urljoin
+
+        soup = BeautifulSoup(html_content, "html.parser")
+        images = []
+        seen_urls = set()
+
+        for img in soup.find_all("img", src=True):
+            src = img.get("src", "").strip()
+            if not src or src.startswith("data:"):
+                continue
+
+            # Resolve relative URLs
+            src = urljoin(base_url, src)
+
+            if src in seen_urls:
+                continue
+            seen_urls.add(src)
+
+            # Filter out likely icons, trackers, spacers
+            alt = img.get("alt", "")
+            width = img.get("width", "")
+            height = img.get("height", "")
+
+            # Skip tiny images (icons, trackers)
+            try:
+                if width and int(width) < 50:
+                    continue
+                if height and int(height) < 50:
+                    continue
+            except (ValueError, TypeError):
+                pass
+
+            # Skip common non-content patterns
+            skip_patterns = [
+                "logo", "icon", "favicon", "spinner", "loading",
+                "pixel", "tracker", "spacer", "blank", "badge",
+                "button", "arrow", "sprite",
+            ]
+            src_lower = src.lower()
+            if any(p in src_lower for p in skip_patterns):
+                continue
+
+            images.append({"url": src, "alt": alt})
+
+            # Limit to avoid overwhelming the context
+            if len(images) >= 5:
+                break
+
+        return images
+    except ImportError:
+        log.debug("BeautifulSoup not available for image extraction")
+        return []
+    except Exception as e:
+        log.debug(f"Image extraction error: {e}")
+        return []
+
+
 async def fetch_url(
     url: str,
     __request__: Request = None,
     __user__: dict = None,
+    __event_emitter__: callable = None,
+    __chat_id__: str = None,
+    __message_id__: str = None,
 ) -> str:
     """
-    Fetch and extract the main text content from a web page URL.
+    Fetch and extract the main text content and images from a web page URL.
+    Uses the configured web loader engine (supports Playwright for JS-heavy pages).
+    Extracted images are displayed in chat and available for visual analysis.
 
     :param url: The URL to fetch content from
-    :return: The extracted text content from the page
+    :return: The extracted text content and metadata from the page
     """
     if __request__ is None:
         return json.dumps({"error": "Request context not available"})
 
     try:
-        content, _ = await asyncio.to_thread(get_content_from_url, __request__, url)
+        if __event_emitter__:
+            await __event_emitter__(
+                {
+                    "type": "status",
+                    "data": {
+                        "action": "web_search",
+                        "description": f"Reading: {url}",
+                        "done": False,
+                        "urls": [url],
+                    },
+                }
+            )
+
+        content, docs = await asyncio.to_thread(get_content_from_url, __request__, url)
+
+        # Extract images from the raw HTML if available
+        page_images = []
+        for doc in docs:
+            raw_html = doc.metadata.get("raw_html", "")
+            if raw_html:
+                page_images = _extract_images_from_html(raw_html, url)
+                break
+
+        # Emit extracted images for inline display and model vision analysis
+        if page_images:
+            image_files = [{"type": "image", "url": img["url"]} for img in page_images]
+
+            if __chat_id__ and __message_id__:
+                db_files = Chats.add_message_files_by_id_and_message_id(
+                    __chat_id__, __message_id__, image_files
+                )
+                if db_files is not None:
+                    image_files = db_files
+
+            if __event_emitter__:
+                await __event_emitter__(
+                    {
+                        "type": "chat:message:files",
+                        "data": {"files": image_files},
+                    }
+                )
+
+        if __event_emitter__:
+            await __event_emitter__(
+                {
+                    "type": "status",
+                    "data": {
+                        "action": "web_search",
+                        "description": f"Read: {url}",
+                        "done": True,
+                        "urls": [url],
+                    },
+                }
+            )
 
         # Truncate if too long (avoid overwhelming context)
         max_length = 50000
         if len(content) > max_length:
             content = content[:max_length] + "\n\n[Content truncated...]"
 
-        return content
+        result = {"content": content, "url": url}
+        if page_images:
+            result["images"] = page_images
+            result["note"] = (
+                "Images from this page have been attached to the chat. "
+                "You can analyze them to verify relevance to the query."
+            )
+
+        return json.dumps(result, ensure_ascii=False)
     except Exception as e:
         log.exception(f"fetch_url error: {e}")
+        return json.dumps({"error": str(e)})
+
+
+async def deep_search(
+    query: str,
+    count: int = 3,
+    __request__: Request = None,
+    __user__: dict = None,
+    __event_emitter__: callable = None,
+    __chat_id__: str = None,
+    __message_id__: str = None,
+) -> str:
+    """
+    Deep web research: search the web AND automatically read the top results.
+    Use this for questions requiring comprehensive, multi-source research.
+    Extracts text content and images from each page for analysis.
+
+    :param query: The search query for web research
+    :param count: Number of top results to read in detail (default: 3, max: 5)
+    :return: JSON with full content from multiple sources, including extracted images
+    """
+    if __request__ is None:
+        return json.dumps({"error": "Request context not available"})
+
+    count = min(count, 5)
+
+    try:
+        # Phase 1: Search
+        if __event_emitter__:
+            await __event_emitter__(
+                {
+                    "type": "status",
+                    "data": {
+                        "action": "web_search",
+                        "description": f"Deep search: {query}",
+                        "done": False,
+                        "urls": [],
+                    },
+                }
+            )
+
+        engine = __request__.app.state.config.WEB_SEARCH_ENGINE
+        user = UserModel(**__user__) if __user__ else None
+        search_count = __request__.app.state.config.WEB_SEARCH_RESULT_COUNT or (count * 2)
+
+        results = await asyncio.to_thread(_search_web, __request__, engine, query, user)
+        results = results[:search_count] if results else []
+
+        if not results:
+            if __event_emitter__:
+                await __event_emitter__(
+                    {
+                        "type": "status",
+                        "data": {
+                            "action": "web_search",
+                            "description": "No results found",
+                            "done": True,
+                            "urls": [],
+                        },
+                    }
+                )
+            return json.dumps(
+                {"error": "No search results found", "query": query},
+                ensure_ascii=False,
+            )
+
+        urls_to_read = [r.link for r in results[:count]]
+
+        # Phase 2: Read pages concurrently
+        if __event_emitter__:
+            await __event_emitter__(
+                {
+                    "type": "status",
+                    "data": {
+                        "action": "web_search",
+                        "description": f"Found {len(results)} results, reading top {len(urls_to_read)} pages...",
+                        "done": False,
+                        "urls": [r.link for r in results],
+                    },
+                }
+            )
+
+        async def _fetch_one(url: str) -> dict:
+            try:
+                text, docs = await asyncio.to_thread(
+                    get_content_from_url, __request__, url
+                )
+                # Extract images from raw HTML
+                page_images = []
+                for doc in docs:
+                    raw_html = doc.metadata.get("raw_html", "")
+                    if raw_html:
+                        page_images = _extract_images_from_html(raw_html, url)
+                        break
+
+                max_length = 30000
+                if len(text) > max_length:
+                    text = text[:max_length] + "\n\n[Content truncated...]"
+
+                return {"url": url, "content": text, "images": page_images}
+            except Exception as e:
+                log.debug(f"deep_search fetch error for {url}: {e}")
+                return {"url": url, "content": f"Error: {e}", "images": []}
+
+        page_results = await asyncio.gather(
+            *[_fetch_one(url) for url in urls_to_read]
+        )
+
+        # Phase 3: Collect and emit all extracted images
+        all_images = []
+        for pr in page_results:
+            for img in pr.get("images", []):
+                all_images.append({"type": "image", "url": img["url"]})
+
+        if all_images:
+            # Limit total images
+            all_images = all_images[:10]
+
+            if __chat_id__ and __message_id__:
+                db_files = Chats.add_message_files_by_id_and_message_id(
+                    __chat_id__, __message_id__, all_images
+                )
+                if db_files is not None:
+                    all_images = db_files
+
+            if __event_emitter__:
+                await __event_emitter__(
+                    {
+                        "type": "chat:message:files",
+                        "data": {"files": all_images},
+                    }
+                )
+
+        # Phase 4: Done
+        if __event_emitter__:
+            await __event_emitter__(
+                {
+                    "type": "status",
+                    "data": {
+                        "action": "web_search",
+                        "description": f"Analyzed {len(page_results)} sources",
+                        "done": True,
+                        "urls": [r.link for r in results],
+                    },
+                }
+            )
+
+        # Build response with search results overview + full page content
+        sources = []
+        for i, pr in enumerate(page_results):
+            source = {
+                "url": pr["url"],
+                "title": results[i].title if i < len(results) else None,
+                "content": pr["content"],
+            }
+            if pr.get("images"):
+                source["images"] = pr["images"]
+            sources.append(source)
+
+        # Include remaining search results as snippets (not fully read)
+        remaining = []
+        for r in results[count:]:
+            remaining.append(
+                {"title": r.title, "link": r.link, "snippet": r.snippet}
+            )
+
+        response = {
+            "query": query,
+            "sources_read": sources,
+            "total_results": len(results),
+        }
+        if remaining:
+            response["other_results"] = remaining
+        if all_images:
+            response["note"] = (
+                "Images from the pages have been attached to the chat. "
+                "You can analyze them to verify relevance to the query."
+            )
+
+        return json.dumps(response, ensure_ascii=False)
+    except Exception as e:
+        log.exception(f"deep_search error: {e}")
         return json.dumps({"error": str(e)})
 
 

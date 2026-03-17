@@ -54,6 +54,7 @@ from open_webui.utils.headers import include_user_info_headers
 from open_webui.tools.builtin import (
     search_web,
     fetch_url,
+    deep_search,
     generate_image,
     edit_image,
     execute_code,
@@ -482,7 +483,7 @@ def get_builtin_tools(
         and get_model_capability("web_search")
         and features.get("web_search")
     ):
-        builtin_functions.extend([search_web, fetch_url])
+        builtin_functions.extend([search_web, fetch_url, deep_search])
 
     # Add image generation/edit tools if builtin category enabled AND enabled globally AND model has image_generation capability
     if (

@@ -67,6 +67,16 @@ def search_google_pse(
             link=result["link"],
             title=result.get("title"),
             snippet=result.get("snippet"),
+            image_url=(
+                result.get("pagemap", {}).get("cse_image", [{}])[0].get("src")
+                if result.get("pagemap", {}).get("cse_image")
+                else None
+            ),
+            thumbnail_url=(
+                result.get("pagemap", {}).get("cse_thumbnail", [{}])[0].get("src")
+                if result.get("pagemap", {}).get("cse_thumbnail")
+                else None
+            ),
         )
         for result in all_results
     ]

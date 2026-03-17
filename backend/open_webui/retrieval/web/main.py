@@ -44,3 +44,6 @@ class SearchResult(BaseModel):
     link: str
     title: Optional[str]
     snippet: Optional[str]
+    image_url: Optional[str] = None
+    thumbnail_url: Optional[str] = None
+    published_date: Optional[str] = None
