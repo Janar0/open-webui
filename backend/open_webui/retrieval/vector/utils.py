@@ -1,6 +1,6 @@
 from datetime import datetime
 
-KEYS_TO_EXCLUDE = ["content", "pages", "tables", "paragraphs", "sections", "figures"]
+KEYS_TO_EXCLUDE = ["content", "pages", "tables", "paragraphs", "sections", "figures", "raw_html"]
 
 
 def filter_metadata(metadata: dict[str, any]) -> dict[str, any]:
