@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy, getContext } from 'svelte';
-	import { settings } from '$lib/stores';
+	import { artifactAdminConfig, settings } from '$lib/stores';
 	import ArrowsPointingOut from '../../icons/ArrowsPointingOut.svelte';
 	import Download from '../../icons/Download.svelte';
 	import Tooltip from '../../common/Tooltip.svelte';
@@ -161,9 +161,9 @@ window.addEventListener('load',function(){setTimeout(rh,200);setTimeout(rh,800);
 		{srcdoc}
 		style="height: {iframeHeight}px; transition: height 0.15s ease-out;"
 		class="w-full border-0 bg-white"
-		sandbox="allow-scripts allow-downloads{($settings?.iframeSandboxAllowForms ?? false)
+		sandbox="allow-scripts allow-downloads{$artifactAdminConfig.iframeSandboxAllowForms
 			? ' allow-forms'
-			: ''}{($settings?.iframeSandboxAllowSameOrigin ?? false) ? ' allow-same-origin' : ''}"
+			: ''}{$artifactAdminConfig.iframeSandboxAllowSameOrigin ? ' allow-same-origin' : ''}"
 	></iframe>
 
 	<div

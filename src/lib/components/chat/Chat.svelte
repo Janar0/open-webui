@@ -45,7 +45,8 @@
 		showEmbeds,
 		selectedTerminalId,
 		showFileNavPath,
-		showFileNavDir
+		showFileNavDir,
+		artifactAdminConfig
 	} from '$lib/stores';
 
 	import { WEBUI_API_BASE_URL } from '$lib/constants';
@@ -633,6 +634,11 @@
 		console.log('mounted');
 		getTaskConfig(localStorage.token).then((cfg) => {
 			adminArtifactPrompt = cfg?.ARTIFACT_PROMPT ?? null;
+			artifactAdminConfig.set({
+				detectArtifacts: cfg?.DETECT_ARTIFACTS ?? true,
+				iframeSandboxAllowSameOrigin: cfg?.IFRAME_SANDBOX_ALLOW_SAME_ORIGIN ?? false,
+				iframeSandboxAllowForms: cfg?.IFRAME_SANDBOX_ALLOW_FORMS ?? false
+			});
 		});
 		window.addEventListener('message', onMessageHandler);
 		$socket?.on('events', chatEventHandler);
@@ -2081,9 +2087,9 @@
 			params?.stream_response ??
 			true;
 
-		const _artifactPrompt = adminArtifactPrompt || $settings?.artifactPrompt || '';
+		const _artifactPrompt = adminArtifactPrompt || '';
 		const _artifactSuffix =
-			($settings?.detectArtifacts ?? true) && _artifactPrompt
+			$artifactAdminConfig.detectArtifacts && _artifactPrompt
 				? `\n\n${_artifactPrompt}`
 				: '';
 		let messages = [

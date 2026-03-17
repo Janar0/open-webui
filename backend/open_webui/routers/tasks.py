@@ -83,6 +83,9 @@ async def get_task_config(request: Request, user=Depends(get_verified_user)):
         "TOOLS_FUNCTION_CALLING_PROMPT_TEMPLATE": request.app.state.config.TOOLS_FUNCTION_CALLING_PROMPT_TEMPLATE,
         "VOICE_MODE_PROMPT_TEMPLATE": request.app.state.config.VOICE_MODE_PROMPT_TEMPLATE,
         "ARTIFACT_PROMPT": request.app.state.config.ARTIFACT_PROMPT,
+        "DETECT_ARTIFACTS": request.app.state.config.DETECT_ARTIFACTS,
+        "IFRAME_SANDBOX_ALLOW_SAME_ORIGIN": request.app.state.config.IFRAME_SANDBOX_ALLOW_SAME_ORIGIN,
+        "IFRAME_SANDBOX_ALLOW_FORMS": request.app.state.config.IFRAME_SANDBOX_ALLOW_FORMS,
     }
 
 
@@ -104,6 +107,9 @@ class TaskConfigForm(BaseModel):
     TOOLS_FUNCTION_CALLING_PROMPT_TEMPLATE: str
     VOICE_MODE_PROMPT_TEMPLATE: Optional[str]
     ARTIFACT_PROMPT: Optional[str] = None
+    DETECT_ARTIFACTS: bool = True
+    IFRAME_SANDBOX_ALLOW_SAME_ORIGIN: bool = False
+    IFRAME_SANDBOX_ALLOW_FORMS: bool = False
 
 
 @router.post("/config/update")
@@ -160,6 +166,10 @@ async def update_task_config(
     if form_data.ARTIFACT_PROMPT is not None:
         request.app.state.config.ARTIFACT_PROMPT = form_data.ARTIFACT_PROMPT
 
+    request.app.state.config.DETECT_ARTIFACTS = form_data.DETECT_ARTIFACTS
+    request.app.state.config.IFRAME_SANDBOX_ALLOW_SAME_ORIGIN = form_data.IFRAME_SANDBOX_ALLOW_SAME_ORIGIN
+    request.app.state.config.IFRAME_SANDBOX_ALLOW_FORMS = form_data.IFRAME_SANDBOX_ALLOW_FORMS
+
     return {
         "TASK_MODEL": request.app.state.config.TASK_MODEL,
         "TASK_MODEL_EXTERNAL": request.app.state.config.TASK_MODEL_EXTERNAL,
@@ -178,6 +188,9 @@ async def update_task_config(
         "TOOLS_FUNCTION_CALLING_PROMPT_TEMPLATE": request.app.state.config.TOOLS_FUNCTION_CALLING_PROMPT_TEMPLATE,
         "VOICE_MODE_PROMPT_TEMPLATE": request.app.state.config.VOICE_MODE_PROMPT_TEMPLATE,
         "ARTIFACT_PROMPT": request.app.state.config.ARTIFACT_PROMPT,
+        "DETECT_ARTIFACTS": request.app.state.config.DETECT_ARTIFACTS,
+        "IFRAME_SANDBOX_ALLOW_SAME_ORIGIN": request.app.state.config.IFRAME_SANDBOX_ALLOW_SAME_ORIGIN,
+        "IFRAME_SANDBOX_ALLOW_FORMS": request.app.state.config.IFRAME_SANDBOX_ALLOW_FORMS,
     }
 
 

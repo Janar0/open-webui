@@ -200,6 +200,9 @@ class RealtimeConfigForm(BaseModel):
     VOICE_THRESHOLD: int        # frequency bin threshold for VAD start (0–255)
     MAX_HISTORY_TURNS: int      # max conversation turns sent to the model
     CAMERA_INTERVAL: int        # camera frame capture interval in seconds
+    STT_ENABLED: bool           # enable parallel Whisper transcription
+    SUMMARY_MODEL: str          # model for compressing old conversation turns
+    SUMMARY_PROMPT: str         # prompt for conversation summarization
 
 
 class AudioConfigUpdateForm(BaseModel):
@@ -223,6 +226,9 @@ async def get_audio_config(request: Request, user=Depends(get_admin_user)):
             "VOICE_THRESHOLD": request.app.state.config.REALTIME_VOICE_THRESHOLD,
             "MAX_HISTORY_TURNS": request.app.state.config.REALTIME_MAX_HISTORY_TURNS,
             "CAMERA_INTERVAL": request.app.state.config.REALTIME_CAMERA_INTERVAL,
+            "STT_ENABLED": request.app.state.config.REALTIME_STT_ENABLED,
+            "SUMMARY_MODEL": request.app.state.config.REALTIME_SUMMARY_MODEL,
+            "SUMMARY_PROMPT": request.app.state.config.REALTIME_SUMMARY_PROMPT,
         },
         "tts": {
             "OPENAI_API_BASE_URL": request.app.state.config.TTS_OPENAI_API_BASE_URL,
@@ -314,6 +320,9 @@ async def update_audio_config(
         request.app.state.config.REALTIME_VOICE_THRESHOLD = form_data.realtime.VOICE_THRESHOLD
         request.app.state.config.REALTIME_MAX_HISTORY_TURNS = form_data.realtime.MAX_HISTORY_TURNS
         request.app.state.config.REALTIME_CAMERA_INTERVAL = form_data.realtime.CAMERA_INTERVAL
+        request.app.state.config.REALTIME_STT_ENABLED = form_data.realtime.STT_ENABLED
+        request.app.state.config.REALTIME_SUMMARY_MODEL = form_data.realtime.SUMMARY_MODEL
+        request.app.state.config.REALTIME_SUMMARY_PROMPT = form_data.realtime.SUMMARY_PROMPT
 
     if request.app.state.config.STT_ENGINE == "":
         request.app.state.faster_whisper_model = set_faster_whisper_model(
@@ -335,6 +344,9 @@ async def update_audio_config(
             "VOICE_THRESHOLD": request.app.state.config.REALTIME_VOICE_THRESHOLD,
             "MAX_HISTORY_TURNS": request.app.state.config.REALTIME_MAX_HISTORY_TURNS,
             "CAMERA_INTERVAL": request.app.state.config.REALTIME_CAMERA_INTERVAL,
+            "STT_ENABLED": request.app.state.config.REALTIME_STT_ENABLED,
+            "SUMMARY_MODEL": request.app.state.config.REALTIME_SUMMARY_MODEL,
+            "SUMMARY_PROMPT": request.app.state.config.REALTIME_SUMMARY_PROMPT,
         },
         "tts": {
             "ENGINE": request.app.state.config.TTS_ENGINE,

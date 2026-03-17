@@ -4,6 +4,7 @@
 
 	import Markdown from './Markdown.svelte';
 	import {
+		artifactAdminConfig,
 		artifactCode,
 		chatId,
 		mobile,
@@ -176,7 +177,7 @@
 			const isReady = (token?.raw ?? '').slice(-4).includes('```') || (token?.raw ?? '') === '';
 
 			if (
-				($settings?.detectArtifacts ?? true) &&
+				$artifactAdminConfig.detectArtifacts &&
 				(['html', 'svg'].includes(lang) || (lang === 'xml' && code.includes('svg'))) &&
 				!$mobile &&
 				$chatId &&

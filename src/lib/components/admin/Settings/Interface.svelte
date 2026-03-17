@@ -32,7 +32,10 @@
 		QUERY_GENERATION_PROMPT_TEMPLATE: '',
 		TOOLS_FUNCTION_CALLING_PROMPT_TEMPLATE: '',
 		VOICE_MODE_PROMPT_TEMPLATE: '',
-		ARTIFACT_PROMPT: null
+		ARTIFACT_PROMPT: null,
+		DETECT_ARTIFACTS: true,
+		IFRAME_SANDBOX_ALLOW_SAME_ORIGIN: false,
+		IFRAME_SANDBOX_ALLOW_FORMS: false
 	};
 
 	const updateInterfaceHandler = async () => {
@@ -433,6 +436,32 @@
 				bind:value={taskConfig.ARTIFACT_PROMPT}
 				placeholder={$i18n.t('Leave empty to use the default prompt, or enter a custom prompt')}
 			/>
+		</div>
+
+		<div class="mb-2.5">
+			<div class=" mt-0.5 mb-2 text-xs font-medium">{$i18n.t('Artifact Display')}</div>
+			<hr class=" border-gray-100/30 dark:border-gray-850/30 my-2" />
+
+			<div class="py-0.5 flex w-full justify-between">
+				<div class="self-center text-xs">{$i18n.t('Inline Artifact Preview')}</div>
+				<div class="flex items-center gap-2 p-1">
+					<Switch bind:state={taskConfig.DETECT_ARTIFACTS} />
+				</div>
+			</div>
+
+			<div class="py-0.5 flex w-full justify-between">
+				<div class="self-center text-xs">{$i18n.t('iframe Sandbox Allow Same Origin')}</div>
+				<div class="flex items-center gap-2 p-1">
+					<Switch bind:state={taskConfig.IFRAME_SANDBOX_ALLOW_SAME_ORIGIN} />
+				</div>
+			</div>
+
+			<div class="py-0.5 flex w-full justify-between">
+				<div class="self-center text-xs">{$i18n.t('iframe Sandbox Allow Forms')}</div>
+				<div class="flex items-center gap-2 p-1">
+					<Switch bind:state={taskConfig.IFRAME_SANDBOX_ALLOW_FORMS} />
+				</div>
+			</div>
 		</div>
 
 		<div class="flex justify-end text-sm font-medium">

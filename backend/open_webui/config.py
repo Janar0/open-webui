@@ -2155,6 +2155,24 @@ ARTIFACT_PROMPT = PersistentConfig(
     ),
 )
 
+DETECT_ARTIFACTS = PersistentConfig(
+    "DETECT_ARTIFACTS",
+    "task.detect_artifacts",
+    os.environ.get("DETECT_ARTIFACTS", "True").lower() == "true",
+)
+
+IFRAME_SANDBOX_ALLOW_SAME_ORIGIN = PersistentConfig(
+    "IFRAME_SANDBOX_ALLOW_SAME_ORIGIN",
+    "task.iframe_sandbox_allow_same_origin",
+    os.environ.get("IFRAME_SANDBOX_ALLOW_SAME_ORIGIN", "False").lower() == "true",
+)
+
+IFRAME_SANDBOX_ALLOW_FORMS = PersistentConfig(
+    "IFRAME_SANDBOX_ALLOW_FORMS",
+    "task.iframe_sandbox_allow_forms",
+    os.environ.get("IFRAME_SANDBOX_ALLOW_FORMS", "False").lower() == "true",
+)
+
 
 DEFAULT_TOOLS_FUNCTION_CALLING_PROMPT_TEMPLATE = """Available Tools: {{TOOLS}}
 
@@ -4400,4 +4418,28 @@ REALTIME_CAMERA_INTERVAL = PersistentConfig(
     "REALTIME_CAMERA_INTERVAL",
     "audio.realtime.camera_interval",
     int(os.environ.get("REALTIME_CAMERA_INTERVAL", "2")),
+)
+
+# Enable parallel Whisper STT transcription during realtime voice sessions
+REALTIME_STT_ENABLED = PersistentConfig(
+    "REALTIME_STT_ENABLED",
+    "audio.realtime.stt_enabled",
+    os.environ.get("REALTIME_STT_ENABLED", "False").lower() == "true",
+)
+
+# Model used to compress/summarize old conversation turns in realtime mode
+REALTIME_SUMMARY_MODEL = PersistentConfig(
+    "REALTIME_SUMMARY_MODEL",
+    "audio.realtime.summary_model",
+    os.environ.get("REALTIME_SUMMARY_MODEL", ""),
+)
+
+# Prompt used to summarize conversation history in realtime mode
+REALTIME_SUMMARY_PROMPT = PersistentConfig(
+    "REALTIME_SUMMARY_PROMPT",
+    "audio.realtime.summary_prompt",
+    os.environ.get(
+        "REALTIME_SUMMARY_PROMPT",
+        "Summarize this conversation context in 3-5 sentences, preserving all key facts, decisions and topics discussed:",
+    ),
 )

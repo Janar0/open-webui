@@ -3,7 +3,7 @@
 	import type { Token } from 'marked';
 
 	import { WEBUI_BASE_URL } from '$lib/constants';
-	import { settings } from '$lib/stores';
+	import { artifactAdminConfig, settings } from '$lib/stores';
 
 	export let id: string;
 	export let token: Token;
@@ -112,9 +112,9 @@
 				src={`${WEBUI_BASE_URL}/api/v1/files/${fileId}/content/html`}
 				title="Content"
 				frameborder="0"
-				sandbox="allow-scripts allow-downloads{($settings?.iframeSandboxAllowForms ?? false)
+				sandbox="allow-scripts allow-downloads{$artifactAdminConfig.iframeSandboxAllowForms
 					? ' allow-forms'
-					: ''}{($settings?.iframeSandboxAllowSameOrigin ?? false) ? ' allow-same-origin' : ''}"
+					: ''}{$artifactAdminConfig.iframeSandboxAllowSameOrigin ? ' allow-same-origin' : ''}"
 				referrerpolicy="strict-origin-when-cross-origin"
 				allowfullscreen
 				width="100%"

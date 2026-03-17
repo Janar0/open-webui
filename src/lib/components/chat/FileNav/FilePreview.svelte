@@ -3,7 +3,7 @@
 	import panzoom, { type PanZoom } from 'panzoom';
 	import { marked } from 'marked';
 	import DOMPurify from 'dompurify';
-	import { settings } from '$lib/stores';
+	import { artifactAdminConfig, settings } from '$lib/stores';
 	import { isCodeFile } from '$lib/utils/codeHighlight';
 	import { initMermaid, renderMermaidDiagram } from '$lib/utils';
 	import Spinner from '../../common/Spinner.svelte';
@@ -405,9 +405,9 @@
 			{/if}
 			<iframe
 				srcdoc={fileContent}
-				sandbox="allow-scripts allow-downloads{($settings?.iframeSandboxAllowForms ?? false)
+				sandbox="allow-scripts allow-downloads{$artifactAdminConfig.iframeSandboxAllowForms
 					? ' allow-forms'
-					: ''}{($settings?.iframeSandboxAllowSameOrigin ?? false) ? ' allow-same-origin' : ''}"
+					: ''}{$artifactAdminConfig.iframeSandboxAllowSameOrigin ? ' allow-same-origin' : ''}"
 				class="w-full h-full border-none bg-white"
 				title="HTML Preview"
 			/>

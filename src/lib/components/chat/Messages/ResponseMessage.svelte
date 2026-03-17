@@ -17,6 +17,7 @@
 
 	import {
 		audioQueue,
+		artifactAdminConfig,
 		config,
 		models,
 		settings,
@@ -698,7 +699,7 @@
 											src={embed}
 											allowScripts={true}
 											allowForms={true}
-											allowSameOrigin={$settings?.iframeSandboxAllowSameOrigin ?? false}
+											allowSameOrigin={$artifactAdminConfig.iframeSandboxAllowSameOrigin}
 											allowPopups={true}
 										/>
 									</div>

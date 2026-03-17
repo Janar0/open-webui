@@ -5,6 +5,7 @@
 	const dispatch = createEventDispatcher();
 
 	import {
+		artifactAdminConfig,
 		artifactCode,
 		chatId,
 		settings,
@@ -244,9 +245,9 @@
 								title="Content"
 								srcdoc={contents[selectedContentIdx].content}
 								class="w-full border-0 h-full rounded-none"
-								sandbox="allow-scripts allow-downloads{($settings?.iframeSandboxAllowForms ?? false)
+								sandbox="allow-scripts allow-downloads{$artifactAdminConfig.iframeSandboxAllowForms
 									? ' allow-forms'
-									: ''}{($settings?.iframeSandboxAllowSameOrigin ?? false)
+									: ''}{$artifactAdminConfig.iframeSandboxAllowSameOrigin
 									? ' allow-same-origin'
 									: ''}"
 								on:load={iframeLoadHandler}

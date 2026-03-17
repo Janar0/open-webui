@@ -103,6 +103,16 @@ export const selectedTerminalId: Writable<string | null> = writable(null);
 export const artifactCode = writable(null);
 export const artifactContents = writable(null);
 
+export const artifactAdminConfig = writable<{
+	detectArtifacts: boolean;
+	iframeSandboxAllowSameOrigin: boolean;
+	iframeSandboxAllowForms: boolean;
+}>({
+	detectArtifacts: true,
+	iframeSandboxAllowSameOrigin: false,
+	iframeSandboxAllowForms: false
+});
+
 export const embed = writable(null);
 
 export const temporaryChatEnabled = writable(false);
