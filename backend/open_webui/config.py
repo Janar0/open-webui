@@ -1108,6 +1108,36 @@ OLLAMA_API_CONFIGS = PersistentConfig(
 )
 
 ####################################
+# OPENROUTER_API
+####################################
+
+ENABLE_OPENROUTER_API = PersistentConfig(
+    "ENABLE_OPENROUTER_API",
+    "openrouter.enable",
+    os.environ.get("ENABLE_OPENROUTER_API", "False").lower() == "true",
+)
+
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+OPENROUTER_API_BASE_URL = os.environ.get(
+    "OPENROUTER_API_BASE_URL", "https://openrouter.ai/api/v1"
+)
+if OPENROUTER_API_BASE_URL.endswith("/"):
+    OPENROUTER_API_BASE_URL = OPENROUTER_API_BASE_URL[:-1]
+
+OPENROUTER_API_KEY = PersistentConfig(
+    "OPENROUTER_API_KEY", "openrouter.api_key", OPENROUTER_API_KEY
+)
+OPENROUTER_API_BASE_URL = PersistentConfig(
+    "OPENROUTER_API_BASE_URL", "openrouter.api_base_url", OPENROUTER_API_BASE_URL
+)
+
+OPENROUTER_API_CONFIG = PersistentConfig(
+    "OPENROUTER_API_CONFIG",
+    "openrouter.api_config",
+    {},
+)
+
+####################################
 # OPENAI_API
 ####################################
 
