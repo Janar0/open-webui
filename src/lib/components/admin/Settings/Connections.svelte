@@ -493,7 +493,60 @@
 								</div>
 							</div>
 
-							<div class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+							<hr class="border-gray-100/30 dark:border-gray-850/30 my-3" />
+
+							<div class="space-y-2">
+								<div class="flex justify-between items-center">
+									<div>
+										<div class="font-medium text-xs">{$i18n.t('Prompt Caching')}</div>
+										<div class="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+											{$i18n.t('Auto-adds cache_control for Anthropic models. OpenAI/DeepSeek/Gemini cache automatically.')}
+										</div>
+									</div>
+									<Switch
+										state={OPENROUTER_API_CONFIG.prompt_caching !== false}
+										on:change={(e) => {
+											OPENROUTER_API_CONFIG.prompt_caching = e.detail;
+											OPENROUTER_API_CONFIG = OPENROUTER_API_CONFIG;
+										}}
+									/>
+								</div>
+
+								{#if OPENROUTER_API_CONFIG.prompt_caching !== false}
+									<div>
+										<div class="font-medium text-xs mb-1">{$i18n.t('Cache TTL (Anthropic)')}</div>
+										<select
+											class="w-full rounded-lg py-2 px-4 text-sm bg-gray-50 dark:text-gray-300 dark:bg-gray-850 outline-hidden"
+											value={OPENROUTER_API_CONFIG.prompt_cache_ttl || ''}
+											on:change={(e) => {
+												OPENROUTER_API_CONFIG.prompt_cache_ttl = e.target.value || undefined;
+												OPENROUTER_API_CONFIG = OPENROUTER_API_CONFIG;
+											}}
+										>
+											<option value="">{$i18n.t('5 minutes (default, cheaper writes)')}</option>
+											<option value="1h">{$i18n.t('1 hour (2x write cost, better for long sessions)')}</option>
+										</select>
+									</div>
+								{/if}
+
+								<div class="flex justify-between items-center">
+									<div>
+										<div class="font-medium text-xs">{$i18n.t('Middle-Out Transforms')}</div>
+										<div class="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+											{$i18n.t('Auto-compress prompts that exceed model context window.')}
+										</div>
+									</div>
+									<Switch
+										state={OPENROUTER_API_CONFIG.transforms?.includes('middle-out') ?? false}
+										on:change={(e) => {
+											OPENROUTER_API_CONFIG.transforms = e.detail ? ['middle-out'] : [];
+											OPENROUTER_API_CONFIG = OPENROUTER_API_CONFIG;
+										}}
+									/>
+								</div>
+							</div>
+
+							<div class="mt-2 text-xs text-gray-400 dark:text-gray-500">
 								{$i18n.t('OpenRouter provides access to 400+ AI models with automatic fallback, provider routing, and unified pricing.')}
 							</div>
 						</div>
