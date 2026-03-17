@@ -150,6 +150,90 @@ def apply_openrouter_params(payload: dict, config: dict) -> dict:
     return payload
 
 
+def apply_prompt_caching(payload: dict, config: dict) -> dict:
+    """Apply prompt caching to messages for supported providers.
+
+    For Anthropic models: adds cache_control breakpoints to system prompts
+    and the last user message to maximize cache hits.
+
+    For OpenAI/DeepSeek/Gemini: caching is automatic, no changes needed.
+
+    Can be disabled via config: {"prompt_caching": false}
+    TTL can be configured: {"prompt_cache_ttl": "1h"} (default: ephemeral/5min)
+    """
+    if not config.get("prompt_caching", True):
+        return payload
+
+    model_id = payload.get("model", "")
+    messages = payload.get("messages", [])
+
+    if not messages:
+        return payload
+
+    # Only apply explicit cache_control for Anthropic models
+    is_anthropic = any(
+        prefix in model_id.lower()
+        for prefix in ["anthropic/", "claude"]
+    )
+
+    if not is_anthropic:
+        # OpenAI, DeepSeek, Gemini have automatic caching — no changes needed
+        return payload
+
+    cache_ttl = config.get("prompt_cache_ttl", None)
+    cache_control = {"type": "ephemeral"}
+    if cache_ttl:
+        cache_control["ttl"] = cache_ttl
+
+    # Apply cache_control to system message(s)
+    for msg in messages:
+        if msg.get("role") != "system":
+            continue
+
+        content = msg.get("content")
+        if isinstance(content, str):
+            # Convert string content to content block format with cache_control
+            msg["content"] = [
+                {
+                    "type": "text",
+                    "text": content,
+                    "cache_control": cache_control,
+                }
+            ]
+        elif isinstance(content, list):
+            # Add cache_control to the last text block in the system message
+            for i in range(len(content) - 1, -1, -1):
+                if isinstance(content[i], dict) and content[i].get("type") == "text":
+                    content[i]["cache_control"] = cache_control
+                    break
+
+    # Also cache the last substantial user message for multi-turn conversations
+    # This helps when users have long conversation histories
+    for i in range(len(messages) - 1, -1, -1):
+        msg = messages[i]
+        if msg.get("role") != "user":
+            continue
+
+        content = msg.get("content")
+        if isinstance(content, str) and len(content) > 500:
+            msg["content"] = [
+                {
+                    "type": "text",
+                    "text": content,
+                    "cache_control": cache_control,
+                }
+            ]
+        elif isinstance(content, list):
+            # Add cache_control to last text block
+            for j in range(len(content) - 1, -1, -1):
+                if isinstance(content[j], dict) and content[j].get("type") == "text":
+                    content[j]["cache_control"] = cache_control
+                    break
+        break  # Only the last user message
+
+    return payload
+
+
 ##########################################
 #
 # API routes
@@ -400,6 +484,9 @@ async def generate_chat_completion(
     # Also apply any per-request OpenRouter params from metadata
     if metadata and metadata.get("openrouter"):
         payload = apply_openrouter_params(payload, metadata["openrouter"])
+
+    # Apply prompt caching (cache_control for Anthropic, auto for others)
+    payload = apply_prompt_caching(payload, config)
 
     # Handle max_tokens / max_completion_tokens
     if "max_completion_tokens" in payload:
