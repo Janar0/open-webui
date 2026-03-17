@@ -43,6 +43,12 @@ def search_searchapi(
             link=result["link"],
             title=result.get("title"),
             snippet=result.get("snippet"),
+            thumbnail_url=(
+                result.get("thumbnail", {}).get("src")
+                if isinstance(result.get("thumbnail"), dict)
+                else result.get("thumbnail")
+            ),
+            published_date=result.get("date"),
         )
         for result in results[:count]
     ]

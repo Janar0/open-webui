@@ -39,11 +39,21 @@ def search_tavily(
     if filter_list:
         results = get_filtered_results(results, filter_list)
 
+    # Tavily may return images at top level
+    images = json_response.get("images", [])
+    image_map = {}
+    for img in images:
+        if isinstance(img, dict):
+            image_map[img.get("url", "")] = img.get("url", "")
+        elif isinstance(img, str):
+            image_map[img] = img
+
     return [
         SearchResult(
             link=result["url"],
             title=result.get("title", ""),
             snippet=result.get("content"),
+            published_date=result.get("published_date"),
         )
         for result in results
     ]

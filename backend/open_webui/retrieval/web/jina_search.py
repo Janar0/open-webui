@@ -27,7 +27,7 @@ def search_jina(
         "Accept": "application/json",
         "Content-Type": "application/json",
         "Authorization": api_key,
-        "X-Retain-Images": "none",
+        "X-Retain-Images": "all",
     }
 
     payload = {"q": query, "count": count if count <= 10 else 10}

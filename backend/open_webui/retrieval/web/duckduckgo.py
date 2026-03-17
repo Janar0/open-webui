@@ -47,6 +47,7 @@ def search_duckduckgo(
             link=result["href"],
             title=result.get("title"),
             snippet=result.get("body"),
+            thumbnail_url=result.get("image") or result.get("thumbnail"),
         )
         for result in search_results
     ]

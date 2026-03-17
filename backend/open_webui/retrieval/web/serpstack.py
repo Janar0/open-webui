@@ -40,7 +40,10 @@ def search_serpstack(
         results = get_filtered_results(results, filter_list)
     return [
         SearchResult(
-            link=result["url"], title=result.get("title"), snippet=result.get("snippet")
+            link=result["url"],
+            title=result.get("title"),
+            snippet=result.get("snippet"),
+            thumbnail_url=result.get("cached_page_url"),
         )
         for result in results[:count]
     ]

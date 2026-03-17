@@ -43,6 +43,8 @@ def search_serpapi(
             link=result["link"],
             title=result.get("title"),
             snippet=result.get("snippet"),
+            thumbnail_url=result.get("thumbnail"),
+            published_date=result.get("date"),
         )
         for result in results[:count]
     ]

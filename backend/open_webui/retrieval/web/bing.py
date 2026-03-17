@@ -36,6 +36,12 @@ def search_bing(
                 link=result["url"],
                 title=result.get("name"),
                 snippet=result.get("snippet"),
+                thumbnail_url=(
+                    result.get("openGraphImage", {}).get("contentUrl")
+                    if isinstance(result.get("openGraphImage"), dict)
+                    else None
+                ),
+                published_date=result.get("dateLastCrawled"),
             )
             for result in results
         ]

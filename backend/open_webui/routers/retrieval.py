@@ -1551,9 +1551,13 @@ def save_docs_to_vector_db(
         raise ValueError(ERROR_MESSAGES.EMPTY_CONTENT)
 
     texts = [sanitize_text_for_db(doc.page_content) for doc in docs]
+
+    # Keys to exclude from vector DB metadata (large/transient data)
+    _METADATA_EXCLUDE_KEYS = {"raw_html"}
+
     metadatas = [
         {
-            **doc.metadata,
+            **{k: v for k, v in doc.metadata.items() if k not in _METADATA_EXCLUDE_KEYS},
             **(metadata if metadata else {}),
             "embedding_config": {
                 "engine": request.app.state.config.RAG_EMBEDDING_ENGINE,

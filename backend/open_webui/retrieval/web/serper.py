@@ -36,6 +36,8 @@ def search_serper(
             link=result["link"],
             title=result.get("title"),
             snippet=result.get("description"),
+            thumbnail_url=result.get("imageUrl"),
+            published_date=result.get("date"),
         )
         for result in results[:count]
     ]

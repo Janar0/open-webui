@@ -483,10 +483,11 @@ async def deep_search(
                 }
             )
 
-        async def _fetch_one(url: str) -> dict:
+        async def _fetch_one(url: str, timeout_sec: int = 30) -> dict:
             try:
-                text, docs = await asyncio.to_thread(
-                    get_content_from_url, __request__, url
+                text, docs = await asyncio.wait_for(
+                    asyncio.to_thread(get_content_from_url, __request__, url),
+                    timeout=timeout_sec,
                 )
                 # Extract images from raw HTML
                 page_images = []
@@ -501,6 +502,9 @@ async def deep_search(
                     text = text[:max_length] + "\n\n[Content truncated...]"
 
                 return {"url": url, "content": text, "images": page_images}
+            except asyncio.TimeoutError:
+                log.debug(f"deep_search timeout for {url} after {timeout_sec}s")
+                return {"url": url, "content": f"[Timeout after {timeout_sec}s]", "images": []}
             except Exception as e:
                 log.debug(f"deep_search fetch error for {url}: {e}")
                 return {"url": url, "content": f"Error: {e}", "images": []}

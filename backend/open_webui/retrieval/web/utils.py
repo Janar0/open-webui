@@ -558,7 +558,7 @@ class SafePlaywrightURLLoader(PlaywrightURLLoader, RateLimitMixin, URLProcessing
                     except Exception:
                         pass  # Best effort — don't fail if networkidle times out
 
-                    raw_html = self._extract_raw_html(page)
+                    raw_html = self._extract_raw_html(page)[:500_000]
                     text = self.evaluator.evaluate(page, browser, response)
                     metadata = {"source": url, "raw_html": raw_html}
                     yield Document(page_content=text, metadata=metadata)
@@ -607,7 +607,7 @@ class SafePlaywrightURLLoader(PlaywrightURLLoader, RateLimitMixin, URLProcessing
                     except Exception:
                         pass  # Best effort
 
-                    raw_html = await page.content()
+                    raw_html = (await page.content())[:500_000]
                     text = await self.evaluator.evaluate_async(page, browser, response)
                     metadata = {"source": url, "raw_html": raw_html}
                     yield Document(page_content=text, metadata=metadata)
@@ -689,6 +689,9 @@ class SafeWebBaseLoader(WebBaseLoader):
         results = await self.fetch_all(urls)
         return self._unpack_fetch_results(results, urls, parser=parser)
 
+    # Max raw HTML size to store in metadata (enough for image extraction, ~500KB)
+    _MAX_RAW_HTML_SIZE = 500_000
+
     def lazy_load(self) -> Iterator[Document]:
         """Lazy load text from the url(s) in web_path with error handling."""
         for path in self.web_paths:
@@ -698,7 +701,8 @@ class SafeWebBaseLoader(WebBaseLoader):
 
                 # Build metadata, include raw HTML for image extraction
                 metadata = extract_metadata(soup, path)
-                metadata["raw_html"] = str(soup)
+                raw = str(soup)
+                metadata["raw_html"] = raw[: self._MAX_RAW_HTML_SIZE]
 
                 yield Document(page_content=text, metadata=metadata)
             except Exception as e:
@@ -710,7 +714,8 @@ class SafeWebBaseLoader(WebBaseLoader):
         results = await self.ascrape_all(self.web_paths)
         for path, soup in zip(self.web_paths, results):
             text = soup.get_text(**self.bs_get_text_kwargs)
-            metadata = {"source": path, "raw_html": str(soup)}
+            raw = str(soup)
+            metadata = {"source": path, "raw_html": raw[: self._MAX_RAW_HTML_SIZE]}
             if title := soup.find("title"):
                 metadata["title"] = title.get_text()
             if description := soup.find("meta", attrs={"name": "description"}):
