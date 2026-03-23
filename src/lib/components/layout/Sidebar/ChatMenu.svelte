@@ -25,7 +25,8 @@
 	} from '$lib/apis/chats';
 	import { chats, folders, settings, theme, user } from '$lib/stores';
 	import { createMessagesList } from '$lib/utils';
-	import { downloadChatAsPDF } from '$lib/apis/utils';
+	import { downloadChatAsPDF, downloadChatAsDocx } from '$lib/apis/utils';
+	import { uploadToGoogleDrive } from '$lib/utils/google-drive-picker';
 	import Download from '$lib/components/icons/Download.svelte';
 	import Folder from '$lib/components/icons/Folder.svelte';
 	import Messages from '$lib/components/chat/Messages.svelte';
@@ -243,6 +244,37 @@
 		}
 	};
 
+	const downloadDocx = async () => {
+		const chatObj = await getChatById(localStorage.token, chatId);
+		if (!chatObj) return;
+
+		const history = chatObj.chat.history;
+		const messages = createMessagesList(history, history.currentId);
+		const blob = await downloadChatAsDocx(localStorage.token, chatObj.chat.title, messages);
+		if (blob) {
+			saveAs(blob, `chat-${chatObj.chat.title}.docx`);
+		}
+	};
+
+	const exportToGoogleDocs = async () => {
+		const chatObj = await getChatById(localStorage.token, chatId);
+		if (!chatObj) return;
+
+		const history = chatObj.chat.history;
+		const messages = createMessagesList(history, history.currentId);
+		const blob = await downloadChatAsDocx(localStorage.token, chatObj.chat.title, messages);
+		if (blob) {
+			try {
+				const url = await uploadToGoogleDrive(blob, `${chatObj.chat.title}.docx`, true);
+				if (url) {
+					window.open(url, '_blank');
+				}
+			} catch (err) {
+				console.error('Failed to export to Google Docs:', err);
+			}
+		}
+	};
+
 	const downloadJSONExport = async () => {
 		const chat = await getChatById(localStorage.token, chatId);
 
@@ -357,6 +389,26 @@
 						}}
 					>
 						<div class="flex items-center line-clamp-1">{$i18n.t('PDF document (.pdf)')}</div>
+					</DropdownMenu.Item>
+
+					<DropdownMenu.Item
+						draggable="false"
+						class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl select-none w-full"
+						on:click={() => {
+							downloadDocx();
+						}}
+					>
+						<div class="flex items-center line-clamp-1">{$i18n.t('Word document (.docx)')}</div>
+					</DropdownMenu.Item>
+
+					<DropdownMenu.Item
+						draggable="false"
+						class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl select-none w-full"
+						on:click={() => {
+							exportToGoogleDocs();
+						}}
+					>
+						<div class="flex items-center line-clamp-1">{$i18n.t('Google Docs')}</div>
 					</DropdownMenu.Item>
 				</DropdownMenu.SubContent>
 			</DropdownMenu.Sub>

@@ -54,6 +54,7 @@
 	import Error from './Error.svelte';
 	import Citations from './Citations.svelte';
 	import CodeExecutions from './CodeExecutions.svelte';
+	import DocumentCard from './DocumentCard.svelte';
 	import ContentRenderer from './ContentRenderer.svelte';
 	import { KokoroWorker } from '$lib/workers/KokoroWorker';
 	import FileItem from '$lib/components/common/FileItem.svelte';
@@ -161,6 +162,11 @@
 	export let topPadding = false;
 
 	let citationsElement: HTMLDivElement;
+
+	const extractTitle = (text: string) => {
+		const match = text?.match(/^#\s+(.+)$/m);
+		return match ? match[1].replace(/[*_`]/g, '') : 'Document';
+	};
 
 	let contentContainerElement: HTMLDivElement;
 	let buttonsContainerElement: HTMLDivElement;
@@ -826,6 +832,18 @@
 								/>
 							{/if}
 
+							{#if message.content && (message.done ?? false) && message.role === 'assistant' && !readOnly}
+								<div class="my-2">
+									<DocumentCard
+										title={extractTitle(message.content)}
+										content={message.content}
+										role={message.role}
+										files={message.files ?? []}
+										codeExecutions={message.code_executions ?? []}
+									/>
+								</div>
+							{/if}
+
 							{#if message?.error}
 								<Error content={message?.error?.content ?? message.content} />
 							{/if}
@@ -1010,6 +1028,7 @@
 										</svg>
 									</button>
 								</Tooltip>
+
 
 								{#if $user?.role === 'admin' || ($user?.permissions?.chat?.tts ?? true)}
 									<Tooltip content={$i18n.t('Read Aloud')} placement="bottom">
