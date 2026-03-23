@@ -72,10 +72,12 @@
 	};
 </script>
 
-<button
+<div
 	class="w-full max-w-lg flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-gray-850 border border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800 transition cursor-pointer text-left group"
-	type="button"
+	role="button"
+	tabindex="0"
 	on:click={openPreview}
+	on:keydown={(e) => e.key === 'Enter' && openPreview()}
 >
 	<!-- Document icon -->
 	<div
@@ -150,4 +152,4 @@
 			{/if}
 		</button>
 	</div>
-</button>
+</div>
