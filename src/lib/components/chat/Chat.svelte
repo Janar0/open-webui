@@ -35,6 +35,7 @@
 		mobile,
 		chatTitle,
 		showArtifacts,
+		showDocxPreview,
 		artifactContents,
 		tools,
 		toolServers,
@@ -689,6 +690,7 @@
 			if (!value) {
 				showCallOverlay.set(false);
 				showArtifacts.set(false);
+				showDocxPreview.set(false);
 				showEmbeds.set(false);
 			}
 		});
@@ -1122,6 +1124,7 @@
 		}
 		await showCallOverlay.set(false);
 		await showArtifacts.set(false);
+		await showDocxPreview.set(false);
 
 		if ($page.url.pathname.includes('/c/')) {
 			window.history.replaceState(history.state, '', `/`);

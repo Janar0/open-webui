@@ -210,3 +210,53 @@ export const createPicker = () => {
 		}
 	});
 };
+
+export const uploadToGoogleDrive = async (
+	blob: Blob,
+	fileName: string,
+	convertToGoogleDoc: boolean = true
+): Promise<string | null> => {
+	try {
+		await initialize();
+		const token = await getAuthToken();
+		if (!token) {
+			throw new Error('Unable to get OAuth token');
+		}
+
+		const metadata: Record<string, string> = {
+			name: fileName
+		};
+		if (convertToGoogleDoc) {
+			metadata.mimeType = 'application/vnd.google-apps.document';
+		}
+
+		const form = new FormData();
+		form.append(
+			'metadata',
+			new Blob([JSON.stringify(metadata)], { type: 'application/json' })
+		);
+		form.append('file', blob);
+
+		const response = await fetch(
+			'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink',
+			{
+				method: 'POST',
+				headers: {
+					Authorization: `Bearer ${token}`
+				},
+				body: form
+			}
+		);
+
+		if (!response.ok) {
+			const errorText = await response.text();
+			throw new Error(`Upload failed (${response.status}): ${errorText}`);
+		}
+
+		const result = await response.json();
+		return result.webViewLink || `https://docs.google.com/document/d/${result.id}/edit`;
+	} catch (error) {
+		console.error('Google Drive upload error:', error);
+		throw error;
+	}
+};
