@@ -1,3 +1,4 @@
+import base64
 import logging
 import re
 from datetime import datetime
@@ -134,6 +135,25 @@ class DocxGenerator:
                 ).startswith("image/"):
                     self._add_image(doc, file_info)
 
+        # Images from code execution results (matplotlib, plotly charts)
+        code_executions = message.get("code_executions", [])
+        for exec_result in code_executions:
+            result = exec_result.get("result", {})
+            # Check result output for base64 images
+            output = result.get("output", "")
+            if isinstance(output, str) and "data:image" in output:
+                for line in output.split("\n"):
+                    line = line.strip()
+                    if line.startswith("data:image"):
+                        self._add_image(doc, {"url": line, "name": "chart"})
+            # Check result files
+            for f in result.get("files", []):
+                url = f.get("url", "")
+                if url:
+                    self._add_image(
+                        doc, {"url": url, "name": f.get("name", "output")}
+                    )
+
         # Parse and render markdown content
         if content:
             self._parse_markdown(doc, content)
@@ -144,9 +164,25 @@ class DocxGenerator:
             return
 
         try:
-            # Handle relative URLs (internal files)
+            # Handle relative URLs (internal files like /api/v1/files/{id}/content)
             if url.startswith("/"):
-                # Internal file - try to read directly from storage
+                file_id_match = re.match(r".*/files/([^/]+)/content", url)
+                if file_id_match:
+                    try:
+                        from open_webui.models.files import Files as FilesModel
+                        from open_webui.storage.provider import Storage
+
+                        file_record = FilesModel.get_file_by_id(
+                            file_id_match.group(1)
+                        )
+                        if file_record and file_record.path:
+                            file_path = Storage.get_file(file_record.path)
+                            doc.add_picture(file_path, width=Inches(5))
+                            return
+                    except Exception as e:
+                        log.warning(
+                            f"Failed to read internal file: {e}"
+                        )
                 self._add_image_placeholder(
                     doc, file_info.get("name", "image")
                 )
@@ -156,8 +192,6 @@ class DocxGenerator:
             if url.startswith("data:image"):
                 match = re.match(r"data:image/\w+;base64,(.+)", url)
                 if match:
-                    import base64
-
                     img_data = base64.b64decode(match.group(1))
                     img_stream = BytesIO(img_data)
                     doc.add_picture(img_stream, width=Inches(5))

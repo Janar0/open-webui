@@ -11,12 +11,8 @@
 
 	const dispatch = createEventDispatcher();
 
-	import fileSaver from 'file-saver';
-	const { saveAs } = fileSaver;
-
 	import { createNewFeedback, getFeedbackById, updateFeedbackById } from '$lib/apis/evaluations';
 	import { getChatById } from '$lib/apis/chats';
-	import { downloadChatAsDocx } from '$lib/apis/utils';
 	import { generateTags } from '$lib/apis';
 
 	import {
@@ -27,10 +23,7 @@
 		settings,
 		temporaryChatEnabled,
 		TTSWorker,
-		user,
-		showDocxPreview,
-		showControls,
-		docxPreviewContent
+		user
 	} from '$lib/stores';
 	import { synthesizeOpenAISpeech } from '$lib/apis/audio';
 	import { imageGenerations } from '$lib/apis/images';
@@ -61,6 +54,7 @@
 	import Error from './Error.svelte';
 	import Citations from './Citations.svelte';
 	import CodeExecutions from './CodeExecutions.svelte';
+	import DocumentCard from './DocumentCard.svelte';
 	import ContentRenderer from './ContentRenderer.svelte';
 	import { KokoroWorker } from '$lib/workers/KokoroWorker';
 	import FileItem from '$lib/components/common/FileItem.svelte';
@@ -168,6 +162,11 @@
 	export let topPadding = false;
 
 	let citationsElement: HTMLDivElement;
+
+	const extractTitle = (text: string) => {
+		const match = text?.match(/^#\s+(.+)$/m);
+		return match ? match[1].replace(/[*_`]/g, '') : 'Document';
+	};
 
 	let contentContainerElement: HTMLDivElement;
 	let buttonsContainerElement: HTMLDivElement;
@@ -833,6 +832,19 @@
 								/>
 							{/if}
 
+							{#if message.content && (message.done ?? false) && message.role === 'assistant' && !readOnly}
+								<div class="my-2">
+									<DocumentCard
+										title={extractTitle(message.content)}
+										content={message.content}
+										role={message.role}
+										messageId={message.id}
+										files={message.files ?? []}
+										codeExecutions={message.code_executions ?? []}
+									/>
+								</div>
+							{/if}
+
 							{#if message?.error}
 								<Error content={message?.error?.content ?? message.content} />
 							{/if}
@@ -1018,74 +1030,6 @@
 									</button>
 								</Tooltip>
 
-								<Tooltip content={$i18n.t('Download as DOCX')} placement="bottom">
-									<button
-										aria-label={$i18n.t('Download as DOCX')}
-										class="{isLastMessage || ($settings?.highContrastMode ?? false)
-											? 'visible'
-											: 'invisible group-hover:visible'} p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg dark:hover:text-white hover:text-black transition"
-										on:click={async () => {
-											const blob = await downloadChatAsDocx(
-												localStorage.token,
-												'Message Export',
-												[{ role: message.role, content: message.content, timestamp: message.timestamp, model: message.model, files: message.files }]
-											);
-											if (blob) {
-												saveAs(blob, `message-${message.id}.docx`);
-											}
-										}}
-									>
-										<svg
-											xmlns="http://www.w3.org/2000/svg"
-											fill="none"
-											aria-hidden="true"
-											viewBox="0 0 24 24"
-											stroke-width="2.3"
-											stroke="currentColor"
-											class="w-4 h-4"
-										>
-											<path
-												stroke-linecap="round"
-												stroke-linejoin="round"
-												d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"
-											/>
-										</svg>
-									</button>
-								</Tooltip>
-
-								<Tooltip content={$i18n.t('Preview Document')} placement="bottom">
-									<button
-										aria-label={$i18n.t('Preview Document')}
-										class="{isLastMessage || ($settings?.highContrastMode ?? false)
-											? 'visible'
-											: 'invisible group-hover:visible'} p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg dark:hover:text-white hover:text-black transition"
-										on:click={() => {
-											docxPreviewContent.set({
-												role: message.role,
-												content: message.content,
-												title: 'Message Export'
-											});
-											showDocxPreview.set(true);
-											showControls.set(true);
-										}}
-									>
-										<svg
-											xmlns="http://www.w3.org/2000/svg"
-											fill="none"
-											aria-hidden="true"
-											viewBox="0 0 24 24"
-											stroke-width="2.3"
-											stroke="currentColor"
-											class="w-4 h-4"
-										>
-											<path
-												stroke-linecap="round"
-												stroke-linejoin="round"
-												d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"
-											/>
-										</svg>
-									</button>
-								</Tooltip>
 
 								{#if $user?.role === 'admin' || ($user?.permissions?.chat?.tts ?? true)}
 									<Tooltip content={$i18n.t('Read Aloud')} placement="bottom">
