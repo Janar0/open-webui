@@ -838,7 +838,6 @@
 										title={extractTitle(message.content)}
 										content={message.content}
 										role={message.role}
-										messageId={message.id}
 										files={message.files ?? []}
 										codeExecutions={message.code_executions ?? []}
 									/>

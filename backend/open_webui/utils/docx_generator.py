@@ -3,16 +3,14 @@ import logging
 import re
 from datetime import datetime
 from io import BytesIO
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import requests
 from docx import Document
 from docx.enum.table import WD_TABLE_ALIGNMENT
-from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
-from docx.oxml.ns import qn, nsdecls
+from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
-from html import escape
 
 from open_webui.models.chats import ChatTitleMessagesForm
 
@@ -33,6 +31,27 @@ COLOR_TABLE_HEADER = "3B82F6"
 COLOR_BLOCKQUOTE_BG = "F9FAFB"
 COLOR_BLOCKQUOTE_BORDER = "3B82F6"
 
+# Pre-compiled regex patterns (avoid re-compiling per paragraph)
+INLINE_FORMAT_RE = re.compile(
+    r"(\*\*\*(.+?)\*\*\*)"  # bold+italic
+    r"|(\*\*(.+?)\*\*)"  # bold
+    r"|(__(.+?)__)"  # bold (underscores)
+    r"|(\*(.+?)\*)"  # italic
+    r"|(_([^_]+?)_)"  # italic (underscores)
+    r"|(`([^`]+?)`)"  # inline code
+    r"|(\[([^\]]+?)\]\(([^)]+?)\))"  # link
+    r"|(!\[([^\]]*?)\]\(([^)]+?)\))"  # image (inline)
+)
+HEADING_RE = re.compile(r"^(#{1,6})\s+(.+)$")
+HRULE_RE = re.compile(r"^[-*_]{3,}\s*$")
+TABLE_SEP_RE = re.compile(r"^\|?\s*[-:]+[-|:\s]+\s*\|?$")
+ULIST_RE = re.compile(r"^[-*+]\s+(.+)$")
+OLIST_RE = re.compile(r"^\d+\.\s+(.+)$")
+IMG_RE = re.compile(r"^!\[([^\]]*)\]\(([^)]+)\)$")
+CODE_BLOCK_RE = re.compile(r"(```[\s\S]*?```)")
+FILE_ID_RE = re.compile(r".*/files/([^/]+)/content")
+BASE64_IMG_RE = re.compile(r"data:image/\w+;base64,(.+)")
+
 
 class DocxGenerator:
     def __init__(self, form_data: ChatTitleMessagesForm):
@@ -48,7 +67,6 @@ class DocxGenerator:
     def generate_chat_docx(self) -> bytes:
         doc = Document()
 
-        # Set default font
         style = doc.styles["Normal"]
         font = style.font
         font.name = FONT_BODY
@@ -59,21 +77,16 @@ class DocxGenerator:
         paragraph_format.space_after = Pt(6)
         paragraph_format.line_spacing = 1.15
 
-        # Title
         title_para = doc.add_heading(self.form_data.title, level=1)
         for run in title_para.runs:
             run.font.color.rgb = RGBColor(0x1A, 0x36, 0x5D)
 
-        # Thin separator after title
         self._add_horizontal_rule(doc)
 
-        # Messages
         for i, message in enumerate(self.form_data.messages):
             self._add_message(doc, message)
             if i < len(self.form_data.messages) - 1:
                 self._add_horizontal_rule(doc)
-
-        # Save to bytes
         buffer = BytesIO()
         doc.save(buffer)
         return buffer.getvalue()
@@ -104,7 +117,6 @@ class DocxGenerator:
         timestamp = message.get("timestamp")
         model = message.get("model", "") if role == "assistant" else ""
 
-        # Role label
         role_para = doc.add_paragraph()
         role_run = role_para.add_run(role.title())
         role_run.bold = True
@@ -116,7 +128,6 @@ class DocxGenerator:
             model_run.font.size = FONT_SIZE_SMALL
             model_run.font.color.rgb = COLOR_TIMESTAMP
 
-        # Timestamp
         if timestamp:
             date_str = self.format_timestamp(timestamp)
             if date_str:
@@ -126,7 +137,6 @@ class DocxGenerator:
                 ts_run.font.color.rgb = COLOR_TIMESTAMP
                 ts_para.paragraph_format.space_after = Pt(2)
 
-        # Images from message files
         files = message.get("files", [])
         if files:
             for file_info in files:
@@ -135,18 +145,15 @@ class DocxGenerator:
                 ).startswith("image/"):
                     self._add_image(doc, file_info)
 
-        # Images from code execution results (matplotlib, plotly charts)
         code_executions = message.get("code_executions", [])
         for exec_result in code_executions:
             result = exec_result.get("result", {})
-            # Check result output for base64 images
             output = result.get("output", "")
             if isinstance(output, str) and "data:image" in output:
                 for line in output.split("\n"):
                     line = line.strip()
                     if line.startswith("data:image"):
                         self._add_image(doc, {"url": line, "name": "chart"})
-            # Check result files
             for f in result.get("files", []):
                 url = f.get("url", "")
                 if url:
@@ -154,7 +161,6 @@ class DocxGenerator:
                         doc, {"url": url, "name": f.get("name", "output")}
                     )
 
-        # Parse and render markdown content
         if content:
             self._parse_markdown(doc, content)
 
@@ -166,7 +172,7 @@ class DocxGenerator:
         try:
             # Handle relative URLs (internal files like /api/v1/files/{id}/content)
             if url.startswith("/"):
-                file_id_match = re.match(r".*/files/([^/]+)/content", url)
+                file_id_match = FILE_ID_RE.match(url)
                 if file_id_match:
                     try:
                         from open_webui.models.files import Files as FilesModel
@@ -181,7 +187,7 @@ class DocxGenerator:
                             return
                     except Exception as e:
                         log.warning(
-                            f"Failed to read internal file: {e}"
+                            f"Failed to read internal file {file_id_match.group(1)}: {e}"
                         )
                 self._add_image_placeholder(
                     doc, file_info.get("name", "image")
@@ -190,7 +196,7 @@ class DocxGenerator:
 
             # Handle base64 data URIs
             if url.startswith("data:image"):
-                match = re.match(r"data:image/\w+;base64,(.+)", url)
+                match = BASE64_IMG_RE.match(url)
                 if match:
                     img_data = base64.b64decode(match.group(1))
                     img_stream = BytesIO(img_data)
@@ -230,7 +236,7 @@ class DocxGenerator:
 
     def _parse_markdown(self, doc: Document, content: str):
         # Split content into blocks: code blocks vs regular text
-        parts = re.split(r"(```[\s\S]*?```)", content)
+        parts = CODE_BLOCK_RE.split(content)
 
         for part in parts:
             if part.startswith("```") and part.endswith("```"):
@@ -250,7 +256,7 @@ class DocxGenerator:
                 continue
 
             # Heading
-            heading_match = re.match(r"^(#{1,6})\s+(.+)$", stripped)
+            heading_match = HEADING_RE.match(stripped)
             if heading_match:
                 level = len(heading_match.group(1))
                 heading_text = heading_match.group(2).strip()
@@ -260,7 +266,7 @@ class DocxGenerator:
                 continue
 
             # Horizontal rule
-            if re.match(r"^[-*_]{3,}\s*$", stripped):
+            if HRULE_RE.match(stripped):
                 self._add_horizontal_rule(doc)
                 i += 1
                 continue
@@ -272,8 +278,8 @@ class DocxGenerator:
                 while j < len(lines) and "|" in lines[j].strip():
                     table_lines.append(lines[j].strip())
                     j += 1
-                if len(table_lines) >= 2 and re.match(
-                    r"^\|?\s*[-:]+[-|:\s]+\s*\|?$", table_lines[1]
+                if len(table_lines) >= 2 and TABLE_SEP_RE.match(
+                    table_lines[1]
                 ):
                     self._add_table(doc, table_lines)
                     i = j
@@ -293,7 +299,7 @@ class DocxGenerator:
                 continue
 
             # Unordered list
-            list_match = re.match(r"^[-*+]\s+(.+)$", stripped)
+            list_match = ULIST_RE.match(stripped)
             if list_match:
                 para = doc.add_paragraph(style="List Bullet")
                 self._add_formatted_runs(para, list_match.group(1))
@@ -301,7 +307,7 @@ class DocxGenerator:
                 continue
 
             # Ordered list
-            ol_match = re.match(r"^\d+\.\s+(.+)$", stripped)
+            ol_match = OLIST_RE.match(stripped)
             if ol_match:
                 para = doc.add_paragraph(style="List Number")
                 self._add_formatted_runs(para, ol_match.group(1))
@@ -309,7 +315,7 @@ class DocxGenerator:
                 continue
 
             # Markdown image
-            img_match = re.match(r"^!\[([^\]]*)\]\(([^)]+)\)$", stripped)
+            img_match = IMG_RE.match(stripped)
             if img_match:
                 alt_text = img_match.group(1)
                 img_url = img_match.group(2)
@@ -323,20 +329,8 @@ class DocxGenerator:
             i += 1
 
     def _add_formatted_runs(self, paragraph, text: str):
-        # Pattern to match inline markdown: bold+italic, bold, italic, code, links, images
-        pattern = re.compile(
-            r"(\*\*\*(.+?)\*\*\*)"  # bold+italic
-            r"|(\*\*(.+?)\*\*)"  # bold
-            r"|(__(.+?)__)"  # bold (underscores)
-            r"|(\*(.+?)\*)"  # italic
-            r"|(_([^_]+?)_)"  # italic (underscores)
-            r"|(`([^`]+?)`)"  # inline code
-            r"|(\[([^\]]+?)\]\(([^)]+?)\))"  # link
-            r"|(!\[([^\]]*?)\]\(([^)]+?)\))"  # image (inline)
-        )
-
         last_end = 0
-        for match in pattern.finditer(text):
+        for match in INLINE_FORMAT_RE.finditer(text):
             # Add plain text before this match
             if match.start() > last_end:
                 plain = text[last_end : match.start()]

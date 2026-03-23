@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { onMount, getContext, createEventDispatcher } from 'svelte';
+	import { getContext, createEventDispatcher } from 'svelte';
+	import { toast } from 'svelte-sonner';
 	import { marked } from 'marked';
 
 	import fileSaver from 'file-saver';
@@ -38,6 +39,9 @@
 			if (blob) {
 				saveAs(blob, `${content.title || 'document'}.docx`);
 			}
+		} catch (err) {
+			console.error('Failed to download DOCX:', err);
+			toast.error($i18n.t('Failed to download document'));
 		} finally {
 			downloading = false;
 		}
@@ -60,6 +64,7 @@
 			}
 		} catch (err) {
 			console.error('Failed to export to Google Docs:', err);
+			toast.error($i18n.t('Failed to export to Google Docs'));
 		} finally {
 			exporting = false;
 		}

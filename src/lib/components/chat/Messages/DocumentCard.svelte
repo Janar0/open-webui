@@ -18,7 +18,6 @@
 	export let title: string = 'Document';
 	export let content: string = '';
 	export let role: string = 'assistant';
-	export let messageId: string = '';
 	export let files: any[] = [];
 	export let codeExecutions: any[] = [];
 

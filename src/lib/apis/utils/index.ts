@@ -91,19 +91,19 @@ export const formatPythonCode = async (token: string, code: string) => {
 	return res;
 };
 
-export const downloadChatAsPDF = async (token: string, title: string, messages: object[]) => {
-	let error = null;
-
-	const blob = await fetch(`${WEBUI_API_BASE_URL}/utils/pdf`, {
+const downloadChatAsFormat = async (
+	token: string,
+	format: 'pdf' | 'docx',
+	title: string,
+	messages: object[]
+) => {
+	const blob = await fetch(`${WEBUI_API_BASE_URL}/utils/${format}`, {
 		method: 'POST',
 		headers: {
 			'Content-Type': 'application/json',
 			Authorization: `Bearer ${token}`
 		},
-		body: JSON.stringify({
-			title: title,
-			messages: messages
-		})
+		body: JSON.stringify({ title, messages })
 	})
 		.then(async (res) => {
 			if (!res.ok) throw await res.json();
@@ -111,39 +111,17 @@ export const downloadChatAsPDF = async (token: string, title: string, messages: 
 		})
 		.catch((err) => {
 			console.error(err);
-			error = err;
 			return null;
 		});
 
 	return blob;
 };
 
-export const downloadChatAsDocx = async (token: string, title: string, messages: object[]) => {
-	let error = null;
+export const downloadChatAsPDF = (token: string, title: string, messages: object[]) =>
+	downloadChatAsFormat(token, 'pdf', title, messages);
 
-	const blob = await fetch(`${WEBUI_API_BASE_URL}/utils/docx`, {
-		method: 'POST',
-		headers: {
-			'Content-Type': 'application/json',
-			Authorization: `Bearer ${token}`
-		},
-		body: JSON.stringify({
-			title: title,
-			messages: messages
-		})
-	})
-		.then(async (res) => {
-			if (!res.ok) throw await res.json();
-			return res.blob();
-		})
-		.catch((err) => {
-			console.error(err);
-			error = err;
-			return null;
-		});
-
-	return blob;
-};
+export const downloadChatAsDocx = (token: string, title: string, messages: object[]) =>
+	downloadChatAsFormat(token, 'docx', title, messages);
 
 export const getHTMLFromMarkdown = async (token: string, md: string) => {
 	let error = null;
