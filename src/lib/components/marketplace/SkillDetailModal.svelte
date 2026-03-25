@@ -72,6 +72,27 @@
 				</div>
 			{/if}
 
+			{#if skill.requires_bins && skill.requires_bins.length > 0}
+				<div class="mb-4 p-3 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-lg">
+					<p class="text-sm font-medium text-amber-800 dark:text-amber-200 mb-1">
+						{$i18n.t('Sandbox Required')}
+					</p>
+					<p class="text-xs text-amber-700 dark:text-amber-300 mb-1.5">
+						{$i18n.t(
+							'This skill requires CLI tools that are not available in the current environment. ' +
+								'The instructions will be injected into the LLM prompt, but execution of commands is limited.'
+						)}
+					</p>
+					<div class="flex flex-wrap gap-1.5">
+						{#each skill.requires_bins as bin}
+							<code class="text-xs px-1.5 py-0.5 bg-amber-100 dark:bg-amber-900/30 rounded"
+								>{bin}</code
+							>
+						{/each}
+					</div>
+				</div>
+			{/if}
+
 			{#if skill.requires_env && skill.requires_env.length > 0}
 				<div class="mb-4 p-3 bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-200 dark:border-yellow-800 rounded-lg">
 					<p class="text-sm font-medium text-yellow-800 dark:text-yellow-200 mb-1">

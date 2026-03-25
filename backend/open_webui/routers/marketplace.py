@@ -194,6 +194,12 @@ async def install_skill(
     owner = skill_data.get("owner") or skill_data.get("author") or ""
 
     requires_env = parsed.requires.env
+    requires_bins = parsed.requires.bins
+    requires_any_bins = parsed.requires.any_bins
+
+    # Classify skill execution type
+    needs_sandbox = bool(requires_bins or requires_any_bins or parsed.requires.config)
+    skill_type = "sandbox" if needs_sandbox else "prompt"
 
     # 6. Create local skill
     marketplace_meta = {
@@ -201,10 +207,12 @@ async def install_skill(
         "slug": form_data.slug,
         "version": version,
         "requires_env": requires_env,
-        "requires_bins": parsed.requires.bins,
+        "requires_bins": requires_bins,
+        "requires_any_bins": requires_any_bins,
         "primary_env": parsed.primary_env,
         "emoji": parsed.emoji,
         "owner": owner,
+        "skill_type": skill_type,
     }
 
     skill = Skills.insert_new_skill(
@@ -253,12 +261,35 @@ async def install_skill(
             detail="Failed to create installation record.",
         )
 
+    # Build installation warnings
+    warnings = []
+    if requires_bins:
+        warnings.append(
+            f"This skill requires CLI tools ({', '.join(requires_bins)}) "
+            "which are not available in the current environment. "
+            "The skill's instructions will be injected into the LLM prompt, "
+            "but commands requiring these tools cannot be executed."
+        )
+    if requires_any_bins:
+        warnings.append(
+            f"This skill requires one of: {', '.join(requires_any_bins)}. "
+            "Execution capabilities are limited without a sandbox environment."
+        )
+    if requires_env:
+        warnings.append(
+            f"This skill requires API credentials: {', '.join(requires_env)}. "
+            "Configure them in the skill settings after installation."
+        )
+
     return MarketplaceInstallResponse(
         installation_id=installation_id,
         skill_id=skill_id,
         name=skill_name,
         description=parsed.description,
         requires_env=requires_env,
+        requires_bins=requires_bins,
+        skill_type=skill_type,
+        warnings=warnings,
     )
 
 

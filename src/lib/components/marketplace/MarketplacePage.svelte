@@ -120,6 +120,13 @@
 
 			toast.success($i18n.t('Skill installed successfully'));
 
+			// Show warnings (e.g., sandbox requirements)
+			if (result.warnings && result.warnings.length > 0) {
+				for (const warning of result.warnings) {
+					toast.warning(warning, { duration: 8000 });
+				}
+			}
+
 			// If requires env vars, open config modal
 			if (result.requires_env && result.requires_env.length > 0) {
 				configInstallationId = result.installation_id;

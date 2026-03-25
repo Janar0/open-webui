@@ -82,6 +82,16 @@
 		{#if skill.version}
 			<span>v{skill.version}</span>
 		{/if}
+		{#if skill.requires_bins && skill.requires_bins.length > 0}
+			<span
+				class="px-1.5 py-0.5 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded"
+				title={$i18n.t('Requires sandbox: {{bins}}', {
+					bins: skill.requires_bins.join(', ')
+				})}
+			>
+				{$i18n.t('Sandbox')}
+			</span>
+		{/if}
 		{#if skill.tags && skill.tags.length > 0}
 			{#each skill.tags.slice(0, 3) as tag}
 				<Badge type="muted" content={tag} />

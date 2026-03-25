@@ -81,6 +81,9 @@ class MarketplaceInstallResponse(BaseModel):
     name: str
     description: Optional[str] = None
     requires_env: list[str] = []
+    requires_bins: list[str] = []
+    skill_type: str = "prompt"  # "prompt" (text-only) or "sandbox" (needs execution)
+    warnings: list[str] = []
 
 
 ####################
