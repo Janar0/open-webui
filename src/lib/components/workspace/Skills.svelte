@@ -392,6 +392,9 @@
 													{#if !skill.is_active}
 														<Badge type="muted" content={$i18n.t('Inactive')} />
 													{/if}
+													{#if skill.meta?.marketplace}
+														<Badge type="info" content="ClawHub" />
+													{/if}
 												</div>
 											</Tooltip>
 											<div class="px-0.5">

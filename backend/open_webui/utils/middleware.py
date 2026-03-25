@@ -2456,8 +2456,41 @@ async def process_chat_payload(request, form_data, user, metadata, model):
         for skill in available_skills:
             if skill.id in user_skill_ids:
                 # User-selected: inject full content
+                skill_content = skill.content
+
+                # Inject per-user config for marketplace skills
+                skill_meta = skill.meta
+                if hasattr(skill_meta, "model_dump"):
+                    skill_meta = skill_meta.model_dump()
+                if isinstance(skill_meta, dict) and skill_meta.get("marketplace"):
+                    try:
+                        from open_webui.models.marketplace import (
+                            MarketplaceInstallations,
+                        )
+
+                        installation = (
+                            MarketplaceInstallations.get_installation_by_skill_id(
+                                skill.id
+                            )
+                        )
+                        if installation and installation.config:
+                            env_vars = (installation.config or {}).get("env", {})
+                            env_entries = [
+                                f"- {k}: {v}"
+                                for k, v in env_vars.items()
+                                if v
+                            ]
+                            if env_entries:
+                                env_block = "\n".join(env_entries)
+                                skill_content = (
+                                    f"<config>\nAvailable credentials for this skill:\n{env_block}\n</config>\n\n"
+                                    + skill_content
+                                )
+                    except Exception:
+                        pass
+
                 form_data["messages"] = add_or_update_system_message(
-                    f'<skill name="{skill.name}">\n{skill.content}\n</skill>',
+                    f'<skill name="{skill.name}">\n{skill_content}\n</skill>',
                     form_data["messages"],
                     append=True,
                 )
