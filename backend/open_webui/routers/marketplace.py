@@ -70,18 +70,23 @@ def _check_marketplace_enabled(request: Request):
 async def search_catalog(
     request: Request,
     q: Optional[str] = "",
-    page: Optional[int] = 1,
-    category: Optional[str] = None,
+    cursor: Optional[str] = None,
+    limit: Optional[int] = 30,
+    sort: Optional[str] = "updated",
     user=Depends(get_verified_user),
 ):
-    """Search ClawHub skill catalog."""
+    """Search or browse ClawHub skill catalog."""
     _check_marketplace_enabled(request)
     client = _get_clawhub_client(request)
     token = _get_user_clawhub_token(user)
 
     try:
         result = await client.search_skills(
-            query=q or "", page=page or 1, category=category, token=token
+            query=q or "",
+            cursor=cursor,
+            limit=limit or 30,
+            sort=sort or "updated",
+            token=token,
         )
         return result
     except ClawHubError as e:
@@ -261,15 +266,40 @@ async def install_skill(
             detail="Failed to create installation record.",
         )
 
+    # Download skill scripts for sandbox skills (non-blocking)
+    has_scripts = False
+    if skill_type == "sandbox":
+        try:
+            zip_bytes = await client.download_skill(
+                form_data.slug, version=version, token=token
+            )
+            if zip_bytes:
+                from open_webui.services.skill_deployer import SkillDeployer
+
+                deployer = SkillDeployer()
+                script_files = deployer._extract_zip(zip_bytes)
+                if script_files:
+                    has_scripts = True
+                    config = {"env": {}, "scripts": script_files, "scripts_deployed": False}
+                    MarketplaceInstallations.update_installation_config(
+                        installation_id, config, db=db
+                    )
+        except Exception as e:
+            log.warning(f"Failed to download skill scripts for {form_data.slug}: {e}")
+
     # Build installation warnings
     warnings = []
     if requires_bins:
-        warnings.append(
-            f"This skill requires CLI tools ({', '.join(requires_bins)}) "
-            "which are not available in the current environment. "
-            "The skill's instructions will be injected into the LLM prompt, "
-            "but commands requiring these tools cannot be executed."
-        )
+        if has_scripts:
+            warnings.append(
+                f"This skill has scripts that require CLI tools ({', '.join(requires_bins)}). "
+                "Deploy them to your terminal using the 'Deploy to Terminal' button."
+            )
+        else:
+            warnings.append(
+                f"This skill requires CLI tools ({', '.join(requires_bins)}) "
+                "but no scripts were found in the skill archive."
+            )
     if requires_any_bins:
         warnings.append(
             f"This skill requires one of: {', '.join(requires_any_bins)}. "
@@ -458,6 +488,108 @@ async def get_installation_config_spec(
         "properties": properties,
         "required": required,
         "current_values": values,
+    }
+
+
+############################
+# Deploy to Terminal
+############################
+
+
+class DeployForm(BaseModel):
+    terminal_id: str
+
+
+@router.post("/installations/{installation_id}/deploy")
+async def deploy_to_terminal(
+    installation_id: str,
+    form_data: DeployForm,
+    request: Request,
+    user=Depends(get_verified_user),
+    db: Session = Depends(get_session),
+):
+    """Deploy skill scripts to user's open-terminal instance."""
+    installation = MarketplaceInstallations.get_installation_by_id(
+        installation_id, db=db
+    )
+    if not installation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Installation not found."
+        )
+    if installation.user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized."
+        )
+
+    # Check that scripts exist in config
+    config = installation.config or {}
+    scripts = config.get("scripts")
+    if not scripts:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No scripts found for this skill. Re-install to download scripts.",
+        )
+
+    # Find terminal connection
+    connections = request.app.state.config.TERMINAL_SERVER_CONNECTIONS or []
+    if hasattr(connections, "value"):
+        connections = connections.value or []
+    connection = next(
+        (c for c in connections if c.get("id") == form_data.terminal_id), None
+    )
+    if connection is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Terminal server not found.",
+        )
+
+    # Check user has access to this terminal
+    from open_webui.models.groups import Groups
+    from open_webui.utils.access_control import has_connection_access
+
+    user_group_ids = {group.id for group in Groups.get_groups_by_member_id(user.id, db=db)}
+    if not has_connection_access(user, connection, user_group_ids):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this terminal.",
+        )
+
+    # Build auth headers for terminal
+    terminal_url = connection.get("url", "")
+    auth_type = connection.get("auth_type", "bearer")
+    headers = {"Content-Type": "application/json", "X-User-Id": user.id}
+    if auth_type == "bearer":
+        headers["Authorization"] = f"Bearer {connection.get('key', '')}"
+
+    # Deploy
+    from open_webui.services.skill_deployer import SkillDeployer
+
+    deployer = SkillDeployer()
+    try:
+        scripts_path = await deployer.deploy_from_files(
+            terminal_url=terminal_url,
+            auth_headers=headers,
+            skill_slug=installation.external_slug,
+            files=scripts,
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to deploy scripts: {str(e)}",
+        )
+
+    # Update config with deployment info
+    config["scripts_path"] = scripts_path
+    config["scripts_deployed"] = True
+    config["deployed_terminal_id"] = form_data.terminal_id
+    MarketplaceInstallations.update_installation_config(
+        installation_id, config, db=db
+    )
+
+    return {
+        "status": "ok",
+        "scripts_path": scripts_path,
+        "terminal_id": form_data.terminal_id,
     }
 
 

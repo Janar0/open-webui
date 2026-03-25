@@ -2474,7 +2474,10 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                             )
                         )
                         if installation and installation.config:
-                            env_vars = (installation.config or {}).get("env", {})
+                            inst_config = installation.config or {}
+
+                            # Inject env var credentials
+                            env_vars = inst_config.get("env", {})
                             env_entries = [
                                 f"- {k}: {v}"
                                 for k, v in env_vars.items()
@@ -2486,6 +2489,34 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                                     f"<config>\nAvailable credentials for this skill:\n{env_block}\n</config>\n\n"
                                     + skill_content
                                 )
+
+                            # Inject execution context for deployed sandbox skills
+                            scripts_path = inst_config.get("scripts_path")
+                            if scripts_path and terminal_id:
+                                # Replace {baseDir} placeholder in skill instructions
+                                skill_content = skill_content.replace(
+                                    "{baseDir}", scripts_path
+                                )
+                                # Add execution context
+                                exec_hint = (
+                                    "\n\n<execution_context>\n"
+                                    f"This skill's scripts are deployed at: {scripts_path}\n"
+                                    "Use the run_command tool to execute them.\n"
+                                )
+                                if env_vars:
+                                    import shlex
+
+                                    export_cmds = " ".join(
+                                        f"{k}={shlex.quote(v)}"
+                                        for k, v in env_vars.items()
+                                        if v
+                                    )
+                                    if export_cmds:
+                                        exec_hint += (
+                                            f"Before running scripts, set environment variables: export {export_cmds}\n"
+                                        )
+                                exec_hint += "</execution_context>"
+                                skill_content += exec_hint
                     except Exception:
                         pass
 

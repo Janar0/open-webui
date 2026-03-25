@@ -67,7 +67,7 @@ class MarketplaceInstallationModel(BaseModel):
 
 
 class MarketplaceInstallForm(BaseModel):
-    slug: str
+    slug: str = Field(..., pattern=r"^[a-zA-Z0-9._/@-]+$", min_length=1, max_length=500)
     source: str = "clawhub"
 
 

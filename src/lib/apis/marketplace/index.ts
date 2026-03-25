@@ -30,13 +30,15 @@ async function apiCall(
 export const searchCatalog = async (
 	token: string,
 	query: string = '',
-	page: number = 1,
-	category: string = ''
+	cursor: string = '',
+	sort: string = 'updated',
+	limit: number = 30
 ) => {
 	const params = new URLSearchParams();
 	if (query) params.set('q', query);
-	if (page > 1) params.set('page', String(page));
-	if (category) params.set('category', category);
+	if (cursor) params.set('cursor', cursor);
+	if (sort && sort !== 'updated') params.set('sort', sort);
+	if (limit && limit !== 30) params.set('limit', String(limit));
 	return apiCall(`${MARKETPLACE_API}/catalog?${params.toString()}`, token);
 };
 
@@ -88,6 +90,19 @@ export const updateInstallationConfig = async (
 
 export const getInstallationConfigSpec = async (token: string, installationId: string) => {
 	return apiCall(`${MARKETPLACE_API}/installations/${installationId}/config/spec`, token);
+};
+
+// Deploy to Terminal
+
+export const deployToTerminal = async (
+	token: string,
+	installationId: string,
+	terminalId: string
+) => {
+	return apiCall(`${MARKETPLACE_API}/installations/${installationId}/deploy`, token, {
+		method: 'POST',
+		body: JSON.stringify({ terminal_id: terminalId })
+	});
 };
 
 // Updates

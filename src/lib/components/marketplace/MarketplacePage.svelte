@@ -13,9 +13,11 @@
 		saveClawHubAuth,
 		removeClawHubAuth,
 		checkUpdate,
-		updateSkillVersion
+		updateSkillVersion,
+		deployToTerminal
 	} from '$lib/apis/marketplace';
 	import { getSkills } from '$lib/apis/skills';
+	import { selectedTerminalId } from '$lib/stores';
 
 	import SkillCard from './SkillCard.svelte';
 	import SkillDetailModal from './SkillDetailModal.svelte';
@@ -31,9 +33,12 @@
 	let searchDebounceTimer: ReturnType<typeof setTimeout>;
 	let loading = false;
 	let catalogResults: any[] = [];
+	let nextCursor: string = '';
+	let sortBy: string = 'updated';
 	let installations: any[] = [];
 	let installedSlugs: Set<string> = new Set();
 	let installingSlugs: Set<string> = new Set();
+	let deployingIds: Set<string> = new Set();
 
 	// Detail modal
 	let showDetail = false;
@@ -58,25 +63,35 @@
 		await searchSkills();
 	});
 
-	async function searchSkills() {
+	async function searchSkills(append: boolean = false) {
 		loading = true;
 		try {
 			const token = localStorage.token;
-			const result = await searchCatalog(token, query);
-			// ClawHub API may return array or object with items
+			const result = await searchCatalog(
+				token,
+				query,
+				append ? nextCursor : '',
+				sortBy
+			);
+			// ClawHub API returns array or object with items/skills + nextCursor
+			let items: any[] = [];
 			if (Array.isArray(result)) {
-				catalogResults = result;
-			} else if (result?.items) {
-				catalogResults = result.items;
-			} else if (result?.skills) {
-				catalogResults = result.skills;
+				items = result;
+				nextCursor = '';
 			} else {
-				catalogResults = [];
+				items = result?.items || result?.skills || [];
+				nextCursor = result?.nextCursor || '';
+			}
+
+			if (append) {
+				catalogResults = [...catalogResults, ...items];
+			} else {
+				catalogResults = items;
 			}
 		} catch (err) {
 			console.error('Catalog search error:', err);
 			toast.error(`${$i18n.t('Failed to search catalog')}: ${err}`);
-			catalogResults = [];
+			if (!append) catalogResults = [];
 		} finally {
 			loading = false;
 		}
@@ -163,6 +178,28 @@
 			await loadInstallations();
 		} catch (err) {
 			toast.error(`${$i18n.t('Failed to update')}: ${err}`);
+		}
+	}
+
+	async function handleDeploy(installationId: string) {
+		if (!$selectedTerminalId) {
+			toast.error($i18n.t('Please select a terminal first in the chat interface'));
+			return;
+		}
+
+		deployingIds.add(installationId);
+		deployingIds = deployingIds;
+
+		try {
+			const token = localStorage.token;
+			await deployToTerminal(token, installationId, $selectedTerminalId);
+			toast.success($i18n.t('Scripts deployed to terminal'));
+			await loadInstallations();
+		} catch (err) {
+			toast.error(`${$i18n.t('Failed to deploy')}: ${err}`);
+		} finally {
+			deployingIds.delete(installationId);
+			deployingIds = deployingIds;
 		}
 	}
 
@@ -309,6 +346,17 @@
 					/>
 				{/each}
 			</div>
+
+			{#if nextCursor}
+				<div class="flex justify-center mt-4">
+					<button
+						class="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition"
+						on:click={() => searchSkills(true)}
+					>
+						{$i18n.t('Load more')}
+					</button>
+				</div>
+			{/if}
 		{/if}
 	{/if}
 
@@ -364,6 +412,28 @@
 								>
 									{$i18n.t('Update')}
 								</button>
+							{/if}
+							{#if installation.config?.scripts && Object.keys(installation.config.scripts).length > 0}
+								{#if installation.config?.scripts_deployed}
+									<span
+										class="text-xs px-2 py-1 text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 rounded-lg"
+									>
+										{$i18n.t('Deployed')}
+									</span>
+								{:else}
+									<button
+										class="text-xs px-2 py-1 bg-purple-500/10 text-purple-600 dark:text-purple-400 rounded-lg hover:bg-purple-500/20 transition disabled:opacity-50"
+										disabled={deployingIds.has(installation.id) || !$selectedTerminalId}
+										title={!$selectedTerminalId
+											? $i18n.t('Select a terminal in chat first')
+											: ''}
+										on:click={() => handleDeploy(installation.id)}
+									>
+										{deployingIds.has(installation.id)
+											? $i18n.t('Deploying...')
+											: $i18n.t('Deploy to Terminal')}
+									</button>
+								{/if}
 							{/if}
 							<button
 								class="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition"
