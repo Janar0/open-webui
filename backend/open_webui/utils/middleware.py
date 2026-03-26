@@ -2475,50 +2475,47 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                         )
                         if installation and installation.config:
                             inst_config = installation.config or {}
-
-                            # Inject env var credentials
                             env_vars = inst_config.get("env", {})
-                            env_entries = [
-                                f"- {k}: {v}"
-                                for k, v in env_vars.items()
-                                if v
-                            ]
-                            if env_entries:
-                                env_block = "\n".join(env_entries)
-                                skill_content = (
-                                    f"<config>\nAvailable credentials for this skill:\n{env_block}\n</config>\n\n"
-                                    + skill_content
-                                )
+                            active_env = {k: v for k, v in env_vars.items() if v}
 
                             # Inject execution context for deployed sandbox skills
                             scripts_path = inst_config.get("scripts_path")
                             if scripts_path and terminal_id:
+                                import json as _json
+
                                 # Replace {baseDir} placeholder in skill instructions
                                 skill_content = skill_content.replace(
                                     "{baseDir}", scripts_path
                                 )
-                                # Add execution context
+                                # Tell the model to pass cwd and env via run_command API
                                 exec_hint = (
                                     "\n\n<execution_context>\n"
                                     f"This skill's scripts are deployed at: {scripts_path}\n"
-                                    "Use the run_command tool to execute them.\n"
+                                    "When calling run_command, always pass:\n"
+                                    f'- "cwd": "{scripts_path}"\n'
                                 )
-                                if env_vars:
-                                    import shlex
-
-                                    export_cmds = " ".join(
-                                        f"{k}={shlex.quote(v)}"
-                                        for k, v in env_vars.items()
-                                        if v
-                                    )
-                                    if export_cmds:
-                                        exec_hint += (
-                                            f"Before running scripts, set environment variables: export {export_cmds}\n"
-                                        )
-                                exec_hint += "</execution_context>"
+                                if active_env:
+                                    env_json = _json.dumps(active_env)
+                                    exec_hint += f'- "env": {env_json}\n'
+                                exec_hint += (
+                                    "This ensures scripts have the correct working directory and credentials.\n"
+                                    "NEVER output credential values to the user.\n"
+                                    "</execution_context>"
+                                )
                                 skill_content += exec_hint
-                    except Exception:
-                        pass
+                            elif active_env:
+                                # Prompt-only skill with env vars: tell model env var names are available
+                                env_names = ", ".join(active_env.keys())
+                                skill_content = (
+                                    f"<config>\nConfigured credentials for this skill: {env_names}\n"
+                                    "These will be injected automatically when executing commands via run_command.\n"
+                                    "NEVER output credential values to the user.\n</config>\n\n"
+                                    + skill_content
+                                )
+                    except Exception as e:
+                        log.warning(
+                            f"Marketplace config injection failed for skill {skill.id}: {e}"
+                        )
 
                 form_data["messages"] = add_or_update_system_message(
                     f'<skill name="{skill.name}">\n{skill_content}\n</skill>',
