@@ -9,9 +9,6 @@
 		installSkill,
 		uninstallSkill,
 		getInstallations,
-		getAuthStatus,
-		saveClawHubAuth,
-		removeClawHubAuth,
 		checkUpdate,
 		updateSkillVersion,
 		deployToTerminal
@@ -28,13 +25,13 @@
 	const i18n = getContext('i18n');
 
 	// State
-	let activeTab: 'browse' | 'installed' | 'settings' = 'browse';
+	let activeTab: 'browse' | 'installed' = 'browse';
 	let query = '';
 	let searchDebounceTimer: ReturnType<typeof setTimeout>;
 	let loading = false;
 	let catalogResults: any[] = [];
 	let nextCursor: string = '';
-	let sortBy: string = 'updated';
+	let sortBy: string = 'recent';
 	let installations: any[] = [];
 	let installedSlugs: Set<string> = new Set();
 	let installingSlugs: Set<string> = new Set();
@@ -52,41 +49,43 @@
 	let configInstallationId = '';
 	let configSkillName = '';
 
-	// Auth
-	let authStatus: any = null;
-	let authToken = '';
-	let authLoading = false;
-
 	onMount(async () => {
 		await loadInstallations();
-		await loadAuthStatus();
 		await searchSkills();
 	});
+
+	function sortResults(items: any[]): any[] {
+		const sorted = [...items];
+		switch (sortBy) {
+			case 'downloads':
+				sorted.sort((a, b) => (b.downloads ?? 0) - (a.downloads ?? 0));
+				break;
+			case 'installs':
+				sorted.sort((a, b) => (b.installs ?? 0) - (a.installs ?? 0));
+				break;
+			case 'name':
+				sorted.sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''));
+				break;
+			case 'recent':
+			default:
+				sorted.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+				break;
+		}
+		return sorted;
+	}
 
 	async function searchSkills(append: boolean = false) {
 		loading = true;
 		try {
 			const token = localStorage.token;
-			const result = await searchCatalog(
-				token,
-				query,
-				append ? nextCursor : '',
-				sortBy
-			);
-			// ClawHub API returns array or object with items/skills + nextCursor
-			let items: any[] = [];
-			if (Array.isArray(result)) {
-				items = result;
-				nextCursor = '';
-			} else {
-				items = result?.items || result?.skills || [];
-				nextCursor = result?.nextCursor || '';
-			}
+			const result = await searchCatalog(token, query, append ? nextCursor : '');
+			let items: any[] = result?.items || [];
+			nextCursor = result?.nextCursor || '';
 
 			if (append) {
-				catalogResults = [...catalogResults, ...items];
+				catalogResults = sortResults([...catalogResults, ...items]);
 			} else {
-				catalogResults = items;
+				catalogResults = sortResults(items);
 			}
 		} catch (err) {
 			console.error('Catalog search error:', err);
@@ -104,6 +103,10 @@
 		}, 400);
 	}
 
+	function handleSortChange() {
+		catalogResults = sortResults(catalogResults);
+	}
+
 	async function loadInstallations() {
 		try {
 			const token = localStorage.token;
@@ -111,14 +114,6 @@
 			installedSlugs = new Set(installations.map((i: any) => i.external_slug));
 		} catch (err) {
 			console.error('Failed to load installations:', err);
-		}
-	}
-
-	async function loadAuthStatus() {
-		try {
-			authStatus = await getAuthStatus(localStorage.token);
-		} catch {
-			authStatus = { authenticated: false };
 		}
 	}
 
@@ -226,31 +221,6 @@
 		showConfig = true;
 	}
 
-	async function handleSaveAuth() {
-		if (!authToken.trim()) return;
-		authLoading = true;
-		try {
-			const result = await saveClawHubAuth(localStorage.token, authToken.trim());
-			toast.success($i18n.t('ClawHub account connected'));
-			authToken = '';
-			await loadAuthStatus();
-		} catch (err) {
-			toast.error(`${$i18n.t('Failed to connect ClawHub')}: ${err}`);
-		} finally {
-			authLoading = false;
-		}
-	}
-
-	async function handleRemoveAuth() {
-		try {
-			await removeClawHubAuth(localStorage.token);
-			toast.success($i18n.t('ClawHub account disconnected'));
-			await loadAuthStatus();
-		} catch (err) {
-			toast.error(`${err}`);
-		}
-	}
-
 	function getInstallationForSlug(slug: string) {
 		return installations.find((i: any) => i.external_slug === slug);
 	}
@@ -286,21 +256,13 @@
 					</span>
 				{/if}
 			</button>
-			<button
-				class="px-3 py-1.5 text-sm rounded-lg transition {activeTab === 'settings'
-					? 'bg-gray-100 dark:bg-gray-800 font-medium'
-					: 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}"
-				on:click={() => (activeTab = 'settings')}
-			>
-				{$i18n.t('Settings')}
-			</button>
 		</div>
 	</div>
 
 	<!-- Browse Tab -->
 	{#if activeTab === 'browse'}
-		<div class="mb-4">
-			<div class="relative">
+		<div class="mb-4 flex gap-2">
+			<div class="relative flex-1">
 				<div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
 					<Search className="w-4 h-4 text-gray-400" />
 				</div>
@@ -312,6 +274,16 @@
 					on:input={handleSearchInput}
 				/>
 			</div>
+			<select
+				class="px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-xl bg-transparent focus:outline-none focus:ring-1 focus:ring-gray-300 dark:focus:ring-gray-600"
+				bind:value={sortBy}
+				on:change={handleSortChange}
+			>
+				<option value="recent">{$i18n.t('Recent')}</option>
+				<option value="downloads">{$i18n.t('Downloads')}</option>
+				<option value="installs">{$i18n.t('Popular')}</option>
+				<option value="name">{$i18n.t('Name')}</option>
+			</select>
 		</div>
 
 		{#if loading}
@@ -452,56 +424,6 @@
 				{/each}
 			</div>
 		{/if}
-	{/if}
-
-	<!-- Settings Tab -->
-	{#if activeTab === 'settings'}
-		<div class="max-w-lg">
-			<h3 class="text-sm font-medium mb-3">{$i18n.t('ClawHub Account')}</h3>
-			<p class="text-xs text-gray-500 dark:text-gray-400 mb-4">
-				{$i18n.t(
-					'Connect your ClawHub account for higher API rate limits and access to private skills.'
-				)}
-			</p>
-
-			{#if authStatus?.authenticated}
-				<div
-					class="flex items-center justify-between p-3 border border-gray-200 dark:border-gray-700 rounded-lg"
-				>
-					<div>
-						<p class="text-sm font-medium">{$i18n.t('Connected')}</p>
-						{#if authStatus.username}
-							<p class="text-xs text-gray-500">{authStatus.username}</p>
-						{/if}
-						{#if authStatus.token_prefix}
-							<p class="text-xs text-gray-400 font-mono">{authStatus.token_prefix}</p>
-						{/if}
-					</div>
-					<button
-						class="text-xs px-3 py-1.5 text-red-500 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition"
-						on:click={handleRemoveAuth}
-					>
-						{$i18n.t('Disconnect')}
-					</button>
-				</div>
-			{:else}
-				<div class="space-y-3">
-					<input
-						type="password"
-						class="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-transparent focus:outline-none focus:ring-1 focus:ring-gray-300 dark:focus:ring-gray-600"
-						placeholder={$i18n.t('ClawHub API token (clh_...)')}
-						bind:value={authToken}
-					/>
-					<button
-						class="px-4 py-2 text-sm bg-black dark:bg-white text-white dark:text-black rounded-lg hover:opacity-80 transition disabled:opacity-50"
-						disabled={authLoading || !authToken.trim()}
-						on:click={handleSaveAuth}
-					>
-						{authLoading ? $i18n.t('Connecting...') : $i18n.t('Connect')}
-					</button>
-				</div>
-			{/if}
-		</div>
 	{/if}
 </div>
 

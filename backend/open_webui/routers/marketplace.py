@@ -1,5 +1,7 @@
 """
 Marketplace router — proxy to ClawHub API + local installation management.
+
+ClawHub token is stored as admin-level config, shared across all users.
 """
 
 import logging
@@ -22,7 +24,7 @@ from open_webui.models.skills import SkillForm, SkillMeta, Skills
 from open_webui.models.access_grants import AccessGrants
 from open_webui.services.clawhub_client import ClawHubClient, ClawHubError
 from open_webui.utils.skill_parser import parse_skill_md
-from open_webui.utils.auth import get_verified_user
+from open_webui.utils.auth import get_verified_user, get_admin_user
 
 log = logging.getLogger(__name__)
 
@@ -39,15 +41,12 @@ def _get_clawhub_client(request: Request) -> ClawHubClient:
     return ClawHubClient()
 
 
-def _get_user_clawhub_token(user) -> Optional[str]:
-    """Extract ClawHub API token from user settings."""
-    settings = user.settings or {}
-    if isinstance(settings, dict):
-        return settings.get("marketplace", {}).get("clawhub_token")
-    if hasattr(settings, "model_dump"):
-        settings = settings.model_dump()
-        return (settings.get("marketplace") or {}).get("clawhub_token")
-    return None
+def _get_clawhub_token(request: Request) -> Optional[str]:
+    """Get ClawHub API token from admin config."""
+    token_config = getattr(request.app.state.config, "CLAWHUB_API_TOKEN", None)
+    if token_config and hasattr(token_config, "value"):
+        return token_config.value or None
+    return str(token_config) if token_config else None
 
 
 def _check_marketplace_enabled(request: Request):
@@ -62,6 +61,79 @@ def _check_marketplace_enabled(request: Request):
 
 
 ############################
+# Admin Config
+############################
+
+
+class MarketplaceAdminConfig(BaseModel):
+    ENABLE_MARKETPLACE: bool
+    CLAWHUB_API_URL: str
+    CLAWHUB_API_TOKEN: str
+
+
+class MarketplaceAdminConfigUpdate(BaseModel):
+    ENABLE_MARKETPLACE: Optional[bool] = None
+    CLAWHUB_API_URL: Optional[str] = None
+    CLAWHUB_API_TOKEN: Optional[str] = None
+
+
+@router.get("/config")
+async def get_marketplace_config(request: Request, user=Depends(get_admin_user)):
+    """Get marketplace config (admin only)."""
+    return {
+        "ENABLE_MARKETPLACE": request.app.state.config.ENABLE_MARKETPLACE,
+        "CLAWHUB_API_URL": request.app.state.config.CLAWHUB_API_URL,
+        "CLAWHUB_API_TOKEN": request.app.state.config.CLAWHUB_API_TOKEN,
+    }
+
+
+@router.post("/config/update")
+async def update_marketplace_config(
+    request: Request,
+    form_data: MarketplaceAdminConfigUpdate,
+    user=Depends(get_admin_user),
+):
+    """Update marketplace config (admin only)."""
+    if form_data.ENABLE_MARKETPLACE is not None:
+        request.app.state.config.ENABLE_MARKETPLACE = form_data.ENABLE_MARKETPLACE
+    if form_data.CLAWHUB_API_URL is not None:
+        request.app.state.config.CLAWHUB_API_URL = form_data.CLAWHUB_API_URL
+    if form_data.CLAWHUB_API_TOKEN is not None:
+        # Verify the token if non-empty
+        if form_data.CLAWHUB_API_TOKEN:
+            client = _get_clawhub_client(request)
+            try:
+                await client.check_auth(form_data.CLAWHUB_API_TOKEN)
+            except ClawHubError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid ClawHub token. Could not verify with ClawHub API.",
+                )
+        request.app.state.config.CLAWHUB_API_TOKEN = form_data.CLAWHUB_API_TOKEN
+
+    return {
+        "ENABLE_MARKETPLACE": request.app.state.config.ENABLE_MARKETPLACE,
+        "CLAWHUB_API_URL": request.app.state.config.CLAWHUB_API_URL,
+        "CLAWHUB_API_TOKEN": request.app.state.config.CLAWHUB_API_TOKEN,
+    }
+
+
+############################
+# Auth status (lightweight)
+############################
+
+
+@router.get("/auth/status")
+async def get_auth_status(
+    request: Request,
+    user=Depends(get_verified_user),
+):
+    """Check if marketplace has a ClawHub token configured (admin-level)."""
+    token = _get_clawhub_token(request)
+    return {"authenticated": bool(token)}
+
+
+############################
 # Catalog — proxy to ClawHub
 ############################
 
@@ -72,20 +144,18 @@ async def search_catalog(
     q: Optional[str] = "",
     cursor: Optional[str] = None,
     limit: Optional[int] = 30,
-    sort: Optional[str] = "updated",
     user=Depends(get_verified_user),
 ):
     """Search or browse ClawHub skill catalog."""
     _check_marketplace_enabled(request)
     client = _get_clawhub_client(request)
-    token = _get_user_clawhub_token(user)
+    token = _get_clawhub_token(request)
 
     try:
         result = await client.search_skills(
             query=q or "",
             cursor=cursor,
             limit=limit or 30,
-            sort=sort or "updated",
             token=token,
         )
         return result
@@ -101,7 +171,7 @@ async def get_catalog_skill(
 ):
     """Get skill details from ClawHub."""
     client = _get_clawhub_client(request)
-    token = _get_user_clawhub_token(user)
+    token = _get_clawhub_token(request)
 
     try:
         return await client.get_skill(slug, token=token)
@@ -117,7 +187,7 @@ async def preview_skill(
 ):
     """Get SKILL.md content preview from ClawHub."""
     client = _get_clawhub_client(request)
-    token = _get_user_clawhub_token(user)
+    token = _get_clawhub_token(request)
 
     try:
         content = await client.get_skill_file(slug, "SKILL.md", token=token)
@@ -141,7 +211,7 @@ async def install_skill(
     """Install a ClawHub skill: download SKILL.md and create local skill record."""
     _check_marketplace_enabled(request)
     client = _get_clawhub_client(request)
-    token = _get_user_clawhub_token(user)
+    token = _get_clawhub_token(request)
 
     # Check if already installed
     existing = MarketplaceInstallations.get_installation_by_user_and_slug(
@@ -153,7 +223,7 @@ async def install_skill(
             detail="Skill already installed. Uninstall first to reinstall.",
         )
 
-    # 1. Fetch skill metadata from ClawHub
+    # 1. Fetch skill metadata from ClawHub (already normalized/flat)
     try:
         skill_data = await client.get_skill(form_data.slug, token=token)
     except ClawHubError as e:
@@ -191,12 +261,8 @@ async def install_skill(
     if Skills.get_skill_by_name(skill_name, db=db):
         skill_name = f"{skill_name} [{user.id[:6]}]"
 
-    version = (
-        skill_data.get("version")
-        or parsed.version
-        or "0.0.0"
-    )
-    owner = skill_data.get("owner") or skill_data.get("author") or ""
+    version = skill_data.get("version") or parsed.version or "0.0.0"
+    owner = skill_data.get("owner") or ""
 
     requires_env = parsed.requires.env
     requires_bins = parsed.requires.bins
@@ -619,7 +685,7 @@ async def check_update(
         )
 
     client = _get_clawhub_client(request)
-    token = _get_user_clawhub_token(user)
+    token = _get_clawhub_token(request)
 
     try:
         skill_data = await client.get_skill(installation.external_slug, token=token)
@@ -663,7 +729,7 @@ async def update_skill_version(
         )
 
     client = _get_clawhub_client(request)
-    token = _get_user_clawhub_token(user)
+    token = _get_clawhub_token(request)
 
     # Download fresh content
     try:
@@ -715,93 +781,4 @@ async def update_skill_version(
     return {
         "status": "ok",
         "installed_version": new_version,
-    }
-
-
-############################
-# ClawHub Auth
-############################
-
-
-class ClawHubAuthForm(BaseModel):
-    token: str
-
-
-@router.post("/auth")
-async def save_clawhub_auth(
-    form_data: ClawHubAuthForm,
-    request: Request,
-    user=Depends(get_verified_user),
-    db: Session = Depends(get_session),
-):
-    """Save ClawHub API token for the current user."""
-    # Verify the token works
-    client = _get_clawhub_client(request)
-    try:
-        whoami = await client.check_auth(form_data.token)
-    except ClawHubError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid ClawHub token. Could not verify with ClawHub API.",
-        )
-
-    # Store token in user settings
-    from open_webui.models.users import Users
-
-    settings = user.settings or {}
-    if hasattr(settings, "model_dump"):
-        settings = settings.model_dump()
-
-    if "marketplace" not in settings:
-        settings["marketplace"] = {}
-    settings["marketplace"]["clawhub_token"] = form_data.token
-    settings["marketplace"]["clawhub_username"] = whoami.get("username", "")
-
-    Users.update_user_settings_by_id(user.id, settings, db=db)
-
-    return {
-        "status": "ok",
-        "username": whoami.get("username", ""),
-        "token_prefix": form_data.token[:8] + "..." if len(form_data.token) > 8 else "",
-    }
-
-
-@router.delete("/auth")
-async def remove_clawhub_auth(
-    user=Depends(get_verified_user),
-    db: Session = Depends(get_session),
-):
-    """Remove ClawHub API token for the current user."""
-    from open_webui.models.users import Users
-
-    settings = user.settings or {}
-    if hasattr(settings, "model_dump"):
-        settings = settings.model_dump()
-
-    if "marketplace" in settings:
-        settings["marketplace"].pop("clawhub_token", None)
-        settings["marketplace"].pop("clawhub_username", None)
-
-    Users.update_user_settings_by_id(user.id, settings, db=db)
-
-    return {"status": "ok"}
-
-
-@router.get("/auth/status")
-async def get_auth_status(
-    user=Depends(get_verified_user),
-):
-    """Check if user has a ClawHub API token configured."""
-    settings = user.settings or {}
-    if hasattr(settings, "model_dump"):
-        settings = settings.model_dump()
-
-    marketplace = settings.get("marketplace", {}) if isinstance(settings, dict) else {}
-    token = marketplace.get("clawhub_token", "")
-    username = marketplace.get("clawhub_username", "")
-
-    return {
-        "authenticated": bool(token),
-        "username": username,
-        "token_prefix": (token[:8] + "..." if len(token) > 8 else "") if token else "",
     }

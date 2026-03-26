@@ -2,15 +2,18 @@
 HTTP client for ClawHub.ai API v1.
 
 Proxies requests from OpenWebUI backend to ClawHub, handling auth and rate limiting.
+All public methods return normalized/flattened dicts so callers don't need to know
+the raw API nesting.
 
 API reference:
-- Search: GET /api/v1/search?q=...
-- List:   GET /api/v1/skills?limit=&cursor=&sort=
-- Detail: GET /api/v1/skills/{slug}
-- File:   GET /api/v1/skills/{slug}/file?path=&version=
+- Search:   GET /api/v1/search?q=...
+- List:     GET /api/v1/skills?limit=&cursor=
+- Detail:   GET /api/v1/skills/{slug}
+- File:     GET /api/v1/skills/{slug}/file?path=&version=
 - Download: GET /api/v1/download?slug=&version=
 - Versions: GET /api/v1/skills/{slug}/versions?limit=&cursor=
-- Auth:   GET /api/v1/whoami
+- Scan:     GET /api/v1/skills/{slug}/scan?version=
+- Auth:     GET /api/v1/whoami
 """
 
 import logging
@@ -48,6 +51,80 @@ class ClawHubClient:
             headers["Authorization"] = f"Bearer {token}"
         return headers
 
+    # ── Response normalizers ──────────────────────────────────────────
+
+    @staticmethod
+    def _normalize_search_item(item: dict) -> dict:
+        """Normalize a SearchResult into the unified catalog item shape."""
+        return {
+            "slug": item.get("slug"),
+            "name": item.get("displayName"),
+            "description": item.get("summary"),
+            "version": item.get("version"),
+            "updatedAt": item.get("updatedAt"),
+            "score": item.get("score"),
+            "tags": [],
+            "stats": {},
+            "downloads": 0,
+            "installs": 0,
+            "owner": "",
+        }
+
+    @staticmethod
+    def _normalize_list_item(item: dict) -> dict:
+        """Normalize a SkillListItem into the unified catalog item shape."""
+        latest = item.get("latestVersion") or {}
+        tags = item.get("tags") or {}
+        stats = item.get("stats") or {}
+        return {
+            "slug": item.get("slug"),
+            "name": item.get("displayName"),
+            "description": item.get("summary"),
+            "version": latest.get("version"),
+            "tags": list(tags.keys()) if isinstance(tags, dict) else tags,
+            "stats": stats,
+            "downloads": stats.get("downloads", 0),
+            "installs": stats.get("installs", 0),
+            "updatedAt": item.get("updatedAt"),
+            "createdAt": item.get("createdAt"),
+            "owner": "",
+        }
+
+    @staticmethod
+    def _normalize_skill_detail(data: dict) -> dict:
+        """Flatten nested SkillResponse into a flat dict."""
+        skill = data.get("skill") or {}
+        latest = data.get("latestVersion") or {}
+        owner_data = data.get("owner") or {}
+        tags = skill.get("tags") or {}
+        stats = skill.get("stats") or {}
+        return {
+            "slug": skill.get("slug"),
+            "name": skill.get("displayName"),
+            "description": skill.get("summary"),
+            "tags": list(tags.keys()) if isinstance(tags, dict) else tags,
+            "stats": stats,
+            "downloads": stats.get("downloads", 0),
+            "installs": stats.get("installs", 0),
+            "version": latest.get("version"),
+            "changelog": latest.get("changelog"),
+            "owner": owner_data.get("handle", ""),
+            "owner_display": owner_data.get("displayName", ""),
+            "owner_image": owner_data.get("image"),
+            "createdAt": skill.get("createdAt"),
+            "updatedAt": skill.get("updatedAt"),
+        }
+
+    @staticmethod
+    def _normalize_whoami(data: dict) -> dict:
+        """Flatten nested WhoamiResponse."""
+        user = data.get("user") or {}
+        return {
+            "username": user.get("handle", ""),
+            "display_name": user.get("displayName", ""),
+            "image": user.get("image", ""),
+        }
+
     # ── Search & Browse ────────────────────────────────────────────────
 
     async def search_skills(
@@ -55,34 +132,35 @@ class ClawHubClient:
         query: str = "",
         cursor: Optional[str] = None,
         limit: int = 30,
-        sort: str = "updated",
         highlighted_only: bool = False,
         token: Optional[str] = None,
     ) -> dict:
         """
         Search or list ClawHub skill catalog.
 
-        If query is provided, uses GET /search?q=...
-        Otherwise, uses GET /skills?limit=&cursor=&sort=
+        Returns normalized ``{items: [...], nextCursor: str}``.
         """
         if query:
-            # Full-text search endpoint
             params = {"q": query}
             if highlighted_only:
                 params["highlightedOnly"] = "true"
             params["nonSuspiciousOnly"] = "true"
-            return await self._request("/search", params=params, token=token)
+            raw = await self._request("/search", params=params, token=token)
+            items = [self._normalize_search_item(r) for r in raw.get("results", [])]
+            return {"items": items, "nextCursor": ""}
         else:
-            # Browse/list endpoint with cursor pagination
-            params = {"limit": str(limit), "sort": sort}
+            params = {"limit": str(limit)}
             if cursor:
                 params["cursor"] = cursor
             params["nonSuspiciousOnly"] = "true"
-            return await self._request("/skills", params=params, token=token)
+            raw = await self._request("/skills", params=params, token=token)
+            items = [self._normalize_list_item(s) for s in raw.get("items", [])]
+            return {"items": items, "nextCursor": raw.get("nextCursor", "")}
 
     async def get_skill(self, slug: str, token: Optional[str] = None) -> dict:
-        """Get skill details by slug (e.g., 'peter/todoist-manager')."""
-        return await self._request(f"/skills/{slug}", token=token)
+        """Get skill details by slug. Returns a flat normalized dict."""
+        raw = await self._request(f"/skills/{slug}", token=token)
+        return self._normalize_skill_detail(raw)
 
     async def get_skill_versions(
         self, slug: str, limit: int = 10, cursor: Optional[str] = None,
@@ -135,8 +213,9 @@ class ClawHubClient:
     # ── Auth ───────────────────────────────────────────────────────────
 
     async def check_auth(self, token: str) -> dict:
-        """Verify a ClawHub API token. Returns user info."""
-        return await self._request("/whoami", token=token)
+        """Verify a ClawHub API token. Returns normalized user info."""
+        raw = await self._request("/whoami", token=token)
+        return self._normalize_whoami(raw)
 
     # ── HTTP primitives ────────────────────────────────────────────────
 
