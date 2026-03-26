@@ -31,23 +31,21 @@ export const searchCatalog = async (
 	token: string,
 	query: string = '',
 	cursor: string = '',
-	sort: string = 'updated',
 	limit: number = 30
 ) => {
 	const params = new URLSearchParams();
 	if (query) params.set('q', query);
 	if (cursor) params.set('cursor', cursor);
-	if (sort && sort !== 'updated') params.set('sort', sort);
 	if (limit && limit !== 30) params.set('limit', String(limit));
 	return apiCall(`${MARKETPLACE_API}/catalog?${params.toString()}`, token);
 };
 
 export const getCatalogSkillDetail = async (token: string, slug: string) => {
-	return apiCall(`${MARKETPLACE_API}/catalog/${encodeURIComponent(slug)}/detail`, token);
+	return apiCall(`${MARKETPLACE_API}/catalog/${slug}/detail`, token);
 };
 
 export const getCatalogSkillPreview = async (token: string, slug: string) => {
-	return apiCall(`${MARKETPLACE_API}/catalog/${encodeURIComponent(slug)}/preview`, token);
+	return apiCall(`${MARKETPLACE_API}/catalog/${slug}/preview`, token);
 };
 
 // Install / Uninstall
@@ -119,19 +117,24 @@ export const updateSkillVersion = async (token: string, installationId: string) 
 	});
 };
 
-// Auth
-
-export const saveClawHubAuth = async (token: string, clawHubToken: string) => {
-	return apiCall(`${MARKETPLACE_API}/auth`, token, {
-		method: 'POST',
-		body: JSON.stringify({ token: clawHubToken })
-	});
-};
-
-export const removeClawHubAuth = async (token: string) => {
-	return apiCall(`${MARKETPLACE_API}/auth`, token, { method: 'DELETE' });
-};
+// Auth status
 
 export const getAuthStatus = async (token: string) => {
 	return apiCall(`${MARKETPLACE_API}/auth/status`, token);
+};
+
+// Admin config
+
+export const getMarketplaceConfig = async (token: string) => {
+	return apiCall(`${MARKETPLACE_API}/config`, token);
+};
+
+export const updateMarketplaceConfig = async (
+	token: string,
+	config: { CLAWHUB_API_TOKEN?: string; CLAWHUB_API_URL?: string; ENABLE_MARKETPLACE?: boolean }
+) => {
+	return apiCall(`${MARKETPLACE_API}/config/update`, token, {
+		method: 'POST',
+		body: JSON.stringify(config)
+	});
 };

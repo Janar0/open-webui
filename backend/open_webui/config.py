@@ -1816,6 +1816,12 @@ CLAWHUB_API_URL = PersistentConfig(
     os.environ.get("CLAWHUB_API_URL", "https://clawhub.ai"),
 )
 
+CLAWHUB_API_TOKEN = PersistentConfig(
+    "CLAWHUB_API_TOKEN",
+    "marketplace.clawhub_api_token",
+    os.environ.get("CLAWHUB_API_TOKEN", ""),
+)
+
 ENABLE_MESSAGE_RATING = PersistentConfig(
     "ENABLE_MESSAGE_RATING",
     "ui.enable_message_rating",

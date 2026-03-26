@@ -30,6 +30,10 @@
 		getTerminalServerConnections,
 		setTerminalServerConnections
 	} from '$lib/apis/configs';
+	import {
+		getMarketplaceConfig,
+		updateMarketplaceConfig
+	} from '$lib/apis/marketplace';
 
 	export let saveSettings: Function;
 
@@ -42,6 +46,10 @@
 	let editTerminalIdx: number | null = null;
 	let showDeleteTerminalConfirm = false;
 	let deleteTerminalIdx: number | null = null;
+
+	// ClawHub / Marketplace
+	let clawHubToken = '';
+	let clawHubSaving = false;
 
 	const addConnectionHandler = async (server) => {
 		servers = [...servers, server];
@@ -103,6 +111,20 @@
 		saveTerminalServers();
 	};
 
+	const saveClawHubToken = async () => {
+		clawHubSaving = true;
+		try {
+			await updateMarketplaceConfig(localStorage.token, {
+				CLAWHUB_API_TOKEN: clawHubToken
+			});
+			toast.success($i18n.t('ClawHub token saved'));
+		} catch (err) {
+			toast.error(`${$i18n.t('Failed to save ClawHub token')}: ${err}`);
+		} finally {
+			clawHubSaving = false;
+		}
+	};
+
 	onMount(async () => {
 		const res = await getToolServerConnections(localStorage.token);
 		servers = res.TOOL_SERVER_CONNECTIONS;
@@ -115,6 +137,14 @@
 			}
 		} catch {
 			// Not configured yet
+		}
+
+		// Load ClawHub config
+		try {
+			const marketplaceRes = await getMarketplaceConfig(localStorage.token);
+			clawHubToken = marketplaceRes?.CLAWHUB_API_TOKEN ?? '';
+		} catch {
+			// Marketplace not enabled or not configured
 		}
 	});
 </script>
@@ -313,6 +343,40 @@
 									target="_blank">{$i18n.t('Learn more about Open Terminal')} ↗</a
 								>
 							</div>
+						</div>
+					</div>
+
+					<hr class=" border-gray-100/30 dark:border-gray-850/30 my-4" />
+
+					<div class="mb-2.5 flex flex-col w-full">
+						<div class="flex items-center gap-2 mb-1">
+							<div class="font-medium">{$i18n.t('ClawHub Marketplace')}</div>
+						</div>
+
+						<div class="text-xs text-gray-500 mb-2.5">
+							{$i18n.t(
+								'Configure a ClawHub API token for the skills marketplace. This token is shared across all users for higher rate limits and access to private skills.'
+							)}
+						</div>
+
+						<div class="flex gap-2 items-end">
+							<div class="flex-1">
+								<div class="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+									{$i18n.t('API Token')}
+								</div>
+								<SensitiveInput
+									placeholder={$i18n.t('ClawHub API token (clh_...)')}
+									bind:value={clawHubToken}
+								/>
+							</div>
+							<button
+								class="px-3 py-1.5 text-sm font-medium bg-black hover:bg-gray-900 text-white dark:bg-white dark:text-black dark:hover:bg-gray-100 transition rounded-lg disabled:opacity-50"
+								type="button"
+								disabled={clawHubSaving}
+								on:click={saveClawHubToken}
+							>
+								{clawHubSaving ? $i18n.t('Saving...') : $i18n.t('Save')}
+							</button>
 						</div>
 					</div>
 				</div>
