@@ -71,18 +71,18 @@ class ClawHubClient:
             if highlighted_only:
                 params["highlightedOnly"] = "true"
             params["nonSuspiciousOnly"] = "true"
-            return await self._get("/search", params=params, token=token)
+            return await self._request("/search", params=params, token=token)
         else:
             # Browse/list endpoint with cursor pagination
             params = {"limit": str(limit), "sort": sort}
             if cursor:
                 params["cursor"] = cursor
             params["nonSuspiciousOnly"] = "true"
-            return await self._get("/skills", params=params, token=token)
+            return await self._request("/skills", params=params, token=token)
 
     async def get_skill(self, slug: str, token: Optional[str] = None) -> dict:
         """Get skill details by slug (e.g., 'peter/todoist-manager')."""
-        return await self._get(f"/skills/{slug}", token=token)
+        return await self._request(f"/skills/{slug}", token=token)
 
     async def get_skill_versions(
         self, slug: str, limit: int = 10, cursor: Optional[str] = None,
@@ -92,7 +92,7 @@ class ClawHubClient:
         params = {"limit": str(limit)}
         if cursor:
             params["cursor"] = cursor
-        return await self._get(f"/skills/{slug}/versions", params=params, token=token)
+        return await self._request(f"/skills/{slug}/versions", params=params, token=token)
 
     # ── Files & Download ───────────────────────────────────────────────
 
@@ -105,8 +105,8 @@ class ClawHubClient:
         params = {"path": path}
         if version:
             params["version"] = version
-        return await self._get_text(
-            f"/skills/{slug}/file", params=params, token=token
+        return await self._request(
+            f"/skills/{slug}/file", params=params, token=token, response_type="text"
         )
 
     async def download_skill(
@@ -117,7 +117,10 @@ class ClawHubClient:
         params = {"slug": slug}
         if version:
             params["version"] = version
-        return await self._get_bytes("/download", params=params, token=token)
+        return await self._request(
+            "/download", params=params, token=token,
+            timeout=DOWNLOAD_TIMEOUT, response_type="bytes",
+        )
 
     async def get_skill_scan(
         self, slug: str, version: Optional[str] = None,
@@ -127,67 +130,41 @@ class ClawHubClient:
         params = {}
         if version:
             params["version"] = version
-        return await self._get(f"/skills/{slug}/scan", params=params, token=token)
+        return await self._request(f"/skills/{slug}/scan", params=params, token=token)
 
     # ── Auth ───────────────────────────────────────────────────────────
 
     async def check_auth(self, token: str) -> dict:
         """Verify a ClawHub API token. Returns user info."""
-        return await self._get("/whoami", token=token)
+        return await self._request("/whoami", token=token)
 
     # ── HTTP primitives ────────────────────────────────────────────────
 
-    async def _get(
-        self, path: str, params: dict = None, token: Optional[str] = None
-    ) -> dict:
+    async def _request(
+        self,
+        path: str,
+        params: dict = None,
+        token: Optional[str] = None,
+        timeout: Optional[aiohttp.ClientTimeout] = None,
+        response_type: str = "json",
+    ):
+        """
+        Unified HTTP GET with error handling.
+
+        response_type: "json" (dict), "text" (str), or "bytes" (bytes).
+        """
         url = f"{self._base_api_url}{path}"
         try:
-            async with aiohttp.ClientSession(timeout=DEFAULT_TIMEOUT) as session:
+            async with aiohttp.ClientSession(timeout=timeout or DEFAULT_TIMEOUT) as session:
                 async with session.get(
                     url, params=params, headers=self._headers(token)
                 ) as resp:
                     if resp.status == 200:
+                        if response_type == "text":
+                            return await resp.text()
+                        elif response_type == "bytes":
+                            return await resp.read()
                         return await resp.json()
-                    elif resp.status == 429:
-                        retry_after = resp.headers.get("Retry-After", "30")
-                        raise ClawHubError(429, f"Rate limited. Retry after {retry_after}s")
-                    else:
-                        text = await resp.text()
-                        raise ClawHubError(resp.status, text[:500])
-        except aiohttp.ClientError as e:
-            raise ClawHubError(503, f"Connection error: {str(e)}")
-
-    async def _get_text(
-        self, path: str, params: dict = None, token: Optional[str] = None
-    ) -> str:
-        url = f"{self._base_api_url}{path}"
-        try:
-            async with aiohttp.ClientSession(timeout=DEFAULT_TIMEOUT) as session:
-                async with session.get(
-                    url, params=params, headers=self._headers(token)
-                ) as resp:
-                    if resp.status == 200:
-                        return await resp.text()
-                    elif resp.status == 429:
-                        retry_after = resp.headers.get("Retry-After", "30")
-                        raise ClawHubError(429, f"Rate limited. Retry after {retry_after}s")
-                    else:
-                        text = await resp.text()
-                        raise ClawHubError(resp.status, text[:500])
-        except aiohttp.ClientError as e:
-            raise ClawHubError(503, f"Connection error: {str(e)}")
-
-    async def _get_bytes(
-        self, path: str, params: dict = None, token: Optional[str] = None
-    ) -> bytes:
-        url = f"{self._base_api_url}{path}"
-        try:
-            async with aiohttp.ClientSession(timeout=DOWNLOAD_TIMEOUT) as session:
-                async with session.get(
-                    url, params=params, headers=self._headers(token)
-                ) as resp:
-                    if resp.status == 200:
-                        return await resp.read()
                     elif resp.status == 429:
                         retry_after = resp.headers.get("Retry-After", "30")
                         raise ClawHubError(429, f"Rate limited. Retry after {retry_after}s")

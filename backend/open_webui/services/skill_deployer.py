@@ -1,7 +1,7 @@
 """
 Deploys ClawHub skill scripts to an open-terminal instance.
 
-Uses the open-terminal HTTP API (write_file, execute) to:
+Uses the open-terminal HTTP API (POST /files/write, POST /execute) to:
 1. Write skill scripts into the terminal's workspace
 2. Make scripts executable
 3. Optionally install pip dependencies
@@ -11,7 +11,6 @@ import io
 import logging
 import os
 import re
-import shlex
 import zipfile
 from typing import Optional
 
@@ -68,11 +67,11 @@ class SkillDeployer:
             await self._write_file(terminal_url, auth_headers, full_path, content)
 
         # Make scripts executable
-        safe_dir = shlex.quote(base_dir)
         await self._execute(
             terminal_url,
             auth_headers,
-            f"find {safe_dir}/scripts -type f -exec chmod +x {{}} \\; 2>/dev/null; echo 'deployed'",
+            "find scripts -type f -exec chmod +x {} \\; 2>/dev/null; echo 'deployed'",
+            cwd=base_dir,
         )
 
         # Install pip requirements if present
@@ -80,7 +79,8 @@ class SkillDeployer:
             await self._execute(
                 terminal_url,
                 auth_headers,
-                f"cd {safe_dir} && pip install -q -r requirements.txt 2>&1 | tail -5",
+                "pip install -q -r requirements.txt 2>&1 | tail -5",
+                cwd=base_dir,
             )
 
         log.info(f"Deployed skill {skill_slug} to terminal at {base_dir}")
@@ -111,11 +111,11 @@ class SkillDeployer:
             await self._write_file(terminal_url, auth_headers, full_path, content)
 
         # Make scripts executable
-        safe_dir = shlex.quote(base_dir)
         await self._execute(
             terminal_url,
             auth_headers,
-            f"find {safe_dir} -name '*.sh' -o -name '*.py' | xargs chmod +x 2>/dev/null; echo 'ok'",
+            "find . -name '*.sh' -o -name '*.py' | xargs chmod +x 2>/dev/null; echo 'ok'",
+            cwd=base_dir,
         )
 
         return base_dir
@@ -167,11 +167,11 @@ class SkillDeployer:
         return files
 
     async def _write_file(self, url: str, headers: dict, path: str, content: str):
-        """Write a file to terminal via open-terminal API."""
+        """Write a file to terminal via open-terminal API (POST /files/write)."""
         try:
             async with aiohttp.ClientSession(timeout=DEPLOY_TIMEOUT) as session:
                 resp = await session.post(
-                    f"{url}/write_file",
+                    f"{url}/files/write",
                     headers=headers,
                     json={"path": path, "content": content},
                 )
@@ -181,14 +181,27 @@ class SkillDeployer:
         except aiohttp.ClientError as e:
             log.warning(f"write_file connection error for {path}: {e}")
 
-    async def _execute(self, url: str, headers: dict, command: str) -> Optional[str]:
-        """Execute a command in terminal via open-terminal API."""
+    async def _execute(
+        self,
+        url: str,
+        headers: dict,
+        command: str,
+        cwd: Optional[str] = None,
+        env: Optional[dict] = None,
+    ) -> Optional[str]:
+        """Execute a command in terminal via open-terminal API (POST /execute?wait=30)."""
+        payload: dict = {"command": command}
+        if cwd:
+            payload["cwd"] = cwd
+        if env:
+            payload["env"] = env
         try:
             async with aiohttp.ClientSession(timeout=DEPLOY_TIMEOUT) as session:
                 resp = await session.post(
                     f"{url}/execute",
+                    params={"wait": "30"},
                     headers=headers,
-                    json={"command": command},
+                    json=payload,
                 )
                 if resp.status == 200:
                     result = await resp.json()
