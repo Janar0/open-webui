@@ -99,6 +99,7 @@ from open_webui.routers import (
     utils,
     scim,
     terminals,
+    marketplace,
 )
 
 from open_webui.routers.retrieval import (
@@ -404,6 +405,8 @@ from open_webui.config import (
     ENABLE_NOTES,
     ENABLE_USER_STATUS,
     ENABLE_COMMUNITY_SHARING,
+    ENABLE_MARKETPLACE,
+    CLAWHUB_API_URL,
     ENABLE_MESSAGE_RATING,
     ENABLE_USER_WEBHOOKS,
     ENABLE_EVALUATION_ARENA_MODELS,
@@ -907,6 +910,8 @@ app.state.config.FOLDER_MAX_FILE_COUNT = FOLDER_MAX_FILE_COUNT
 app.state.config.ENABLE_CHANNELS = ENABLE_CHANNELS
 app.state.config.ENABLE_NOTES = ENABLE_NOTES
 app.state.config.ENABLE_COMMUNITY_SHARING = ENABLE_COMMUNITY_SHARING
+app.state.config.ENABLE_MARKETPLACE = ENABLE_MARKETPLACE
+app.state.config.CLAWHUB_API_URL = CLAWHUB_API_URL
 app.state.config.ENABLE_MESSAGE_RATING = ENABLE_MESSAGE_RATING
 app.state.config.ENABLE_USER_WEBHOOKS = ENABLE_USER_WEBHOOKS
 app.state.config.ENABLE_USER_STATUS = ENABLE_USER_STATUS
@@ -1612,6 +1617,7 @@ app.include_router(knowledge.router, prefix="/api/v1/knowledge", tags=["knowledg
 app.include_router(prompts.router, prefix="/api/v1/prompts", tags=["prompts"])
 app.include_router(tools.router, prefix="/api/v1/tools", tags=["tools"])
 app.include_router(skills.router, prefix="/api/v1/skills", tags=["skills"])
+app.include_router(marketplace.router, prefix="/api/v1/marketplace", tags=["marketplace"])
 
 app.include_router(memories.router, prefix="/api/v1/memories", tags=["memories"])
 app.include_router(folders.router, prefix="/api/v1/folders", tags=["folders"])
@@ -2224,6 +2230,7 @@ async def get_app_config(request: Request):
                     "enable_image_generation": app.state.config.ENABLE_IMAGE_GENERATION,
                     "enable_autocomplete_generation": app.state.config.ENABLE_AUTOCOMPLETE_GENERATION,
                     "enable_community_sharing": app.state.config.ENABLE_COMMUNITY_SHARING,
+                    "enable_marketplace": app.state.config.ENABLE_MARKETPLACE,
                     "enable_message_rating": app.state.config.ENABLE_MESSAGE_RATING,
                     "enable_user_webhooks": app.state.config.ENABLE_USER_WEBHOOKS,
                     "enable_user_status": app.state.config.ENABLE_USER_STATUS,

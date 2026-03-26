@@ -1,0 +1,807 @@
+"""
+Marketplace router — proxy to ClawHub API + local installation management.
+"""
+
+import logging
+from typing import Optional
+from uuid import uuid4
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from open_webui.internal.db import get_session
+from open_webui.models.marketplace import (
+    MarketplaceConfigForm,
+    MarketplaceInstallForm,
+    MarketplaceInstallResponse,
+    MarketplaceInstallationModel,
+    MarketplaceInstallations,
+)
+from open_webui.models.skills import SkillForm, SkillMeta, Skills
+from open_webui.models.access_grants import AccessGrants
+from open_webui.services.clawhub_client import ClawHubClient, ClawHubError
+from open_webui.utils.skill_parser import parse_skill_md
+from open_webui.utils.auth import get_verified_user
+
+log = logging.getLogger(__name__)
+
+router = APIRouter()
+
+
+def _get_clawhub_client(request: Request) -> ClawHubClient:
+    clawhub_config = getattr(request.app.state.config, "CLAWHUB_API_URL", None)
+    base_url = clawhub_config.value if clawhub_config and hasattr(clawhub_config, "value") else None
+    if not base_url and clawhub_config:
+        base_url = str(clawhub_config)
+    if base_url:
+        return ClawHubClient(base_url=base_url)
+    return ClawHubClient()
+
+
+def _get_user_clawhub_token(user) -> Optional[str]:
+    """Extract ClawHub API token from user settings."""
+    settings = user.settings or {}
+    if isinstance(settings, dict):
+        return settings.get("marketplace", {}).get("clawhub_token")
+    if hasattr(settings, "model_dump"):
+        settings = settings.model_dump()
+        return (settings.get("marketplace") or {}).get("clawhub_token")
+    return None
+
+
+def _check_marketplace_enabled(request: Request):
+    """Raise 404 if marketplace feature is disabled."""
+    enabled = getattr(request.app.state.config, "ENABLE_MARKETPLACE", None)
+    is_enabled = enabled.value if enabled and hasattr(enabled, "value") else True
+    if not is_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Marketplace feature is disabled.",
+        )
+
+
+############################
+# Catalog — proxy to ClawHub
+############################
+
+
+@router.get("/catalog")
+async def search_catalog(
+    request: Request,
+    q: Optional[str] = "",
+    cursor: Optional[str] = None,
+    limit: Optional[int] = 30,
+    sort: Optional[str] = "updated",
+    user=Depends(get_verified_user),
+):
+    """Search or browse ClawHub skill catalog."""
+    _check_marketplace_enabled(request)
+    client = _get_clawhub_client(request)
+    token = _get_user_clawhub_token(user)
+
+    try:
+        result = await client.search_skills(
+            query=q or "",
+            cursor=cursor,
+            limit=limit or 30,
+            sort=sort or "updated",
+            token=token,
+        )
+        return result
+    except ClawHubError as e:
+        raise HTTPException(status_code=e.status or 502, detail=e.message)
+
+
+@router.get("/catalog/{slug:path}/detail")
+async def get_catalog_skill(
+    slug: str,
+    request: Request,
+    user=Depends(get_verified_user),
+):
+    """Get skill details from ClawHub."""
+    client = _get_clawhub_client(request)
+    token = _get_user_clawhub_token(user)
+
+    try:
+        return await client.get_skill(slug, token=token)
+    except ClawHubError as e:
+        raise HTTPException(status_code=e.status or 502, detail=e.message)
+
+
+@router.get("/catalog/{slug:path}/preview")
+async def preview_skill(
+    slug: str,
+    request: Request,
+    user=Depends(get_verified_user),
+):
+    """Get SKILL.md content preview from ClawHub."""
+    client = _get_clawhub_client(request)
+    token = _get_user_clawhub_token(user)
+
+    try:
+        content = await client.get_skill_file(slug, "SKILL.md", token=token)
+        return {"content": content}
+    except ClawHubError as e:
+        raise HTTPException(status_code=e.status or 502, detail=e.message)
+
+
+############################
+# Install / Uninstall
+############################
+
+
+@router.post("/install", response_model=MarketplaceInstallResponse)
+async def install_skill(
+    form_data: MarketplaceInstallForm,
+    request: Request,
+    user=Depends(get_verified_user),
+    db: Session = Depends(get_session),
+):
+    """Install a ClawHub skill: download SKILL.md and create local skill record."""
+    _check_marketplace_enabled(request)
+    client = _get_clawhub_client(request)
+    token = _get_user_clawhub_token(user)
+
+    # Check if already installed
+    existing = MarketplaceInstallations.get_installation_by_user_and_slug(
+        user.id, form_data.source, form_data.slug, db=db
+    )
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Skill already installed. Uninstall first to reinstall.",
+        )
+
+    # 1. Fetch skill metadata from ClawHub
+    try:
+        skill_data = await client.get_skill(form_data.slug, token=token)
+    except ClawHubError as e:
+        raise HTTPException(
+            status_code=e.status or 502,
+            detail=f"Failed to fetch skill from ClawHub: {e.message}",
+        )
+
+    # 2. Download SKILL.md
+    try:
+        skill_content = await client.get_skill_file(
+            form_data.slug, "SKILL.md", token=token
+        )
+    except ClawHubError as e:
+        raise HTTPException(
+            status_code=e.status or 502,
+            detail=f"Failed to download SKILL.md: {e.message}",
+        )
+
+    # 3. Parse YAML frontmatter
+    parsed = parse_skill_md(skill_content)
+
+    # 4. Build unique skill ID for this user
+    slug_safe = form_data.slug.replace("/", "-").replace(" ", "-").lower()
+    skill_id = f"clawhub-{slug_safe}-{user.id[:8]}"
+
+    # Check for ID collision (shouldn't happen but be safe)
+    if Skills.get_skill_by_id(skill_id, db=db):
+        skill_id = f"clawhub-{slug_safe}-{str(uuid4())[:8]}"
+
+    # 5. Determine skill name (handle uniqueness constraint)
+    skill_name = parsed.name or form_data.slug.split("/")[-1]
+    if Skills.get_skill_by_name(skill_name, db=db):
+        skill_name = f"{skill_name} (ClawHub)"
+    if Skills.get_skill_by_name(skill_name, db=db):
+        skill_name = f"{skill_name} [{user.id[:6]}]"
+
+    version = (
+        skill_data.get("version")
+        or parsed.version
+        or "0.0.0"
+    )
+    owner = skill_data.get("owner") or skill_data.get("author") or ""
+
+    requires_env = parsed.requires.env
+    requires_bins = parsed.requires.bins
+    requires_any_bins = parsed.requires.any_bins
+
+    # Classify skill execution type
+    needs_sandbox = bool(requires_bins or requires_any_bins or parsed.requires.config)
+    skill_type = "sandbox" if needs_sandbox else "prompt"
+
+    # 6. Create local skill
+    marketplace_meta = {
+        "source": form_data.source,
+        "slug": form_data.slug,
+        "version": version,
+        "requires_env": requires_env,
+        "requires_bins": requires_bins,
+        "requires_any_bins": requires_any_bins,
+        "primary_env": parsed.primary_env,
+        "emoji": parsed.emoji,
+        "owner": owner,
+        "skill_type": skill_type,
+    }
+
+    skill = Skills.insert_new_skill(
+        user.id,
+        SkillForm(
+            id=skill_id,
+            name=skill_name,
+            description=parsed.description or skill_data.get("description", ""),
+            content=parsed.instructions,
+            meta=SkillMeta(tags=skill_data.get("tags", [])),
+            is_active=True,
+        ),
+        db=db,
+    )
+
+    if not skill:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create local skill record.",
+        )
+
+    # Store marketplace metadata in skill.meta (update after creation)
+    updated_meta = skill.meta.model_dump() if hasattr(skill.meta, "model_dump") else dict(skill.meta)
+    updated_meta["marketplace"] = marketplace_meta
+    Skills.update_skill_by_id(skill_id, {"meta": updated_meta}, db=db)
+
+    # 7. Create installation record
+    installation_id = str(uuid4())
+    installation = MarketplaceInstallations.create_installation(
+        id=installation_id,
+        user_id=user.id,
+        skill_id=skill_id,
+        source=form_data.source,
+        external_slug=form_data.slug,
+        external_owner=owner,
+        installed_version=version,
+        meta=skill_data,
+        db=db,
+    )
+
+    if not installation:
+        # Rollback skill creation
+        Skills.delete_skill_by_id(skill_id, db=db)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create installation record.",
+        )
+
+    # Download skill scripts for sandbox skills (non-blocking)
+    has_scripts = False
+    if skill_type == "sandbox":
+        try:
+            zip_bytes = await client.download_skill(
+                form_data.slug, version=version, token=token
+            )
+            if zip_bytes:
+                from open_webui.services.skill_deployer import SkillDeployer
+
+                deployer = SkillDeployer()
+                script_files = deployer._extract_zip(zip_bytes)
+                if script_files:
+                    has_scripts = True
+                    config = {"env": {}, "scripts": script_files, "scripts_deployed": False}
+                    MarketplaceInstallations.update_installation_config(
+                        installation_id, config, db=db
+                    )
+        except Exception as e:
+            log.warning(f"Failed to download skill scripts for {form_data.slug}: {e}")
+
+    # Build installation warnings
+    warnings = []
+    if requires_bins:
+        if has_scripts:
+            warnings.append(
+                f"This skill has scripts that require CLI tools ({', '.join(requires_bins)}). "
+                "Deploy them to your terminal using the 'Deploy to Terminal' button."
+            )
+        else:
+            warnings.append(
+                f"This skill requires CLI tools ({', '.join(requires_bins)}) "
+                "but no scripts were found in the skill archive."
+            )
+    if requires_any_bins:
+        warnings.append(
+            f"This skill requires one of: {', '.join(requires_any_bins)}. "
+            "Execution capabilities are limited without a sandbox environment."
+        )
+    if requires_env:
+        warnings.append(
+            f"This skill requires API credentials: {', '.join(requires_env)}. "
+            "Configure them in the skill settings after installation."
+        )
+
+    return MarketplaceInstallResponse(
+        installation_id=installation_id,
+        skill_id=skill_id,
+        name=skill_name,
+        description=parsed.description,
+        requires_env=requires_env,
+        requires_bins=requires_bins,
+        skill_type=skill_type,
+        warnings=warnings,
+    )
+
+
+@router.delete("/installations/{installation_id}")
+async def uninstall_skill(
+    installation_id: str,
+    user=Depends(get_verified_user),
+    db: Session = Depends(get_session),
+):
+    """Uninstall a marketplace skill: remove local skill and installation record."""
+    installation = MarketplaceInstallations.get_installation_by_id(
+        installation_id, db=db
+    )
+    if not installation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Installation not found.",
+        )
+
+    if installation.user_id != user.id and user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to uninstall this skill.",
+        )
+
+    # Delete local skill
+    Skills.delete_skill_by_id(installation.skill_id, db=db)
+
+    # Delete installation record
+    MarketplaceInstallations.delete_installation(installation_id, db=db)
+
+    return {"status": "ok", "message": "Skill uninstalled successfully."}
+
+
+############################
+# Installations — per-user
+############################
+
+
+@router.get("/installations", response_model=list[MarketplaceInstallationModel])
+async def get_installations(
+    user=Depends(get_verified_user),
+    db: Session = Depends(get_session),
+):
+    """List user's installed marketplace skills."""
+    return MarketplaceInstallations.get_installations_by_user_id(user.id, db=db)
+
+
+@router.get("/installations/{installation_id}", response_model=MarketplaceInstallationModel)
+async def get_installation(
+    installation_id: str,
+    user=Depends(get_verified_user),
+    db: Session = Depends(get_session),
+):
+    """Get a specific installation."""
+    installation = MarketplaceInstallations.get_installation_by_id(
+        installation_id, db=db
+    )
+    if not installation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Installation not found."
+        )
+    if installation.user_id != user.id and user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized."
+        )
+    return installation
+
+
+############################
+# Per-user configuration
+############################
+
+
+@router.put("/installations/{installation_id}/config")
+async def update_installation_config(
+    installation_id: str,
+    form_data: MarketplaceConfigForm,
+    user=Depends(get_verified_user),
+    db: Session = Depends(get_session),
+):
+    """Update per-user configuration (env vars) for an installed skill."""
+    installation = MarketplaceInstallations.get_installation_by_id(
+        installation_id, db=db
+    )
+    if not installation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Installation not found."
+        )
+    if installation.user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized."
+        )
+
+    config = installation.config or {}
+    config["env"] = form_data.env
+    result = MarketplaceInstallations.update_installation_config(
+        installation_id, config, db=db
+    )
+
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update config.",
+        )
+
+    return {"status": "ok", "config": config}
+
+
+@router.get("/installations/{installation_id}/config/spec")
+async def get_installation_config_spec(
+    installation_id: str,
+    user=Depends(get_verified_user),
+    db: Session = Depends(get_session),
+):
+    """
+    Get the config spec for a marketplace skill (required env vars).
+    Returns JSON Schema-like spec for dynamic form rendering.
+    """
+    installation = MarketplaceInstallations.get_installation_by_id(
+        installation_id, db=db
+    )
+    if not installation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Installation not found."
+        )
+    if installation.user_id != user.id and user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized."
+        )
+
+    # Get skill to read marketplace meta
+    skill = Skills.get_skill_by_id(installation.skill_id, db=db)
+    if not skill:
+        return {"properties": {}, "required": []}
+
+    meta = skill.meta
+    if hasattr(meta, "model_dump"):
+        meta = meta.model_dump()
+    marketplace = meta.get("marketplace", {}) if isinstance(meta, dict) else {}
+    requires_env = marketplace.get("requires_env", [])
+    primary_env = marketplace.get("primary_env")
+
+    # Build JSON Schema-like spec
+    properties = {}
+    required = []
+    for env_var in requires_env:
+        properties[env_var] = {
+            "type": "string",
+            "title": env_var,
+            "description": f"{'Primary API key' if env_var == primary_env else 'Required'} for this skill",
+        }
+        required.append(env_var)
+
+    # Include current values (masked)
+    current_env = (installation.config or {}).get("env", {})
+    values = {}
+    for key in requires_env:
+        val = current_env.get(key, "")
+        if val and len(val) > 4:
+            values[key] = val[:4] + "..." + val[-2:]
+        else:
+            values[key] = val
+
+    return {
+        "properties": properties,
+        "required": required,
+        "current_values": values,
+    }
+
+
+############################
+# Deploy to Terminal
+############################
+
+
+class DeployForm(BaseModel):
+    terminal_id: str
+
+
+@router.post("/installations/{installation_id}/deploy")
+async def deploy_to_terminal(
+    installation_id: str,
+    form_data: DeployForm,
+    request: Request,
+    user=Depends(get_verified_user),
+    db: Session = Depends(get_session),
+):
+    """Deploy skill scripts to user's open-terminal instance."""
+    installation = MarketplaceInstallations.get_installation_by_id(
+        installation_id, db=db
+    )
+    if not installation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Installation not found."
+        )
+    if installation.user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized."
+        )
+
+    # Check that scripts exist in config
+    config = installation.config or {}
+    scripts = config.get("scripts")
+    if not scripts:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No scripts found for this skill. Re-install to download scripts.",
+        )
+
+    # Find terminal connection
+    connections = request.app.state.config.TERMINAL_SERVER_CONNECTIONS or []
+    if hasattr(connections, "value"):
+        connections = connections.value or []
+    connection = next(
+        (c for c in connections if c.get("id") == form_data.terminal_id), None
+    )
+    if connection is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Terminal server not found.",
+        )
+
+    # Check user has access to this terminal
+    from open_webui.models.groups import Groups
+    from open_webui.utils.access_control import has_connection_access
+
+    user_group_ids = {group.id for group in Groups.get_groups_by_member_id(user.id, db=db)}
+    if not has_connection_access(user, connection, user_group_ids):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this terminal.",
+        )
+
+    # Build auth headers for terminal
+    terminal_url = connection.get("url", "")
+    auth_type = connection.get("auth_type", "bearer")
+    headers = {"Content-Type": "application/json", "X-User-Id": user.id}
+    if auth_type == "bearer":
+        headers["Authorization"] = f"Bearer {connection.get('key', '')}"
+
+    # Deploy
+    from open_webui.services.skill_deployer import SkillDeployer
+
+    deployer = SkillDeployer()
+    try:
+        scripts_path = await deployer.deploy_from_files(
+            terminal_url=terminal_url,
+            auth_headers=headers,
+            skill_slug=installation.external_slug,
+            files=scripts,
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to deploy scripts: {str(e)}",
+        )
+
+    # Update config with deployment info
+    config["scripts_path"] = scripts_path
+    config["scripts_deployed"] = True
+    config["deployed_terminal_id"] = form_data.terminal_id
+    MarketplaceInstallations.update_installation_config(
+        installation_id, config, db=db
+    )
+
+    return {
+        "status": "ok",
+        "scripts_path": scripts_path,
+        "terminal_id": form_data.terminal_id,
+    }
+
+
+############################
+# Updates
+############################
+
+
+@router.post("/installations/{installation_id}/check-update")
+async def check_update(
+    installation_id: str,
+    request: Request,
+    user=Depends(get_verified_user),
+    db: Session = Depends(get_session),
+):
+    """Check if a newer version is available on ClawHub."""
+    installation = MarketplaceInstallations.get_installation_by_id(
+        installation_id, db=db
+    )
+    if not installation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Installation not found."
+        )
+    if installation.user_id != user.id and user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized."
+        )
+
+    client = _get_clawhub_client(request)
+    token = _get_user_clawhub_token(user)
+
+    try:
+        skill_data = await client.get_skill(installation.external_slug, token=token)
+    except ClawHubError as e:
+        raise HTTPException(
+            status_code=e.status or 502, detail=f"Failed to check update: {e.message}"
+        )
+
+    latest_version = skill_data.get("version", installation.installed_version)
+    MarketplaceInstallations.update_latest_version(
+        installation_id, latest_version, db=db
+    )
+
+    has_update = latest_version != installation.installed_version
+
+    return {
+        "has_update": has_update,
+        "installed_version": installation.installed_version,
+        "latest_version": latest_version,
+    }
+
+
+@router.post("/installations/{installation_id}/update")
+async def update_skill_version(
+    installation_id: str,
+    request: Request,
+    user=Depends(get_verified_user),
+    db: Session = Depends(get_session),
+):
+    """Update an installed skill to the latest version from ClawHub."""
+    installation = MarketplaceInstallations.get_installation_by_id(
+        installation_id, db=db
+    )
+    if not installation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Installation not found."
+        )
+    if installation.user_id != user.id and user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized."
+        )
+
+    client = _get_clawhub_client(request)
+    token = _get_user_clawhub_token(user)
+
+    # Download fresh content
+    try:
+        skill_content = await client.get_skill_file(
+            installation.external_slug, "SKILL.md", token=token
+        )
+        skill_data = await client.get_skill(installation.external_slug, token=token)
+    except ClawHubError as e:
+        raise HTTPException(
+            status_code=e.status or 502, detail=f"Failed to fetch update: {e.message}"
+        )
+
+    parsed = parse_skill_md(skill_content)
+    new_version = skill_data.get("version") or parsed.version or "0.0.0"
+
+    # Update local skill content
+    skill = Skills.get_skill_by_id(installation.skill_id, db=db)
+    if skill:
+        meta = skill.meta
+        if hasattr(meta, "model_dump"):
+            meta = meta.model_dump()
+        marketplace = meta.get("marketplace", {}) if isinstance(meta, dict) else {}
+        marketplace["version"] = new_version
+        marketplace["requires_env"] = parsed.requires.env
+        marketplace["requires_bins"] = parsed.requires.bins
+        marketplace["primary_env"] = parsed.primary_env
+        marketplace["emoji"] = parsed.emoji
+
+        if isinstance(meta, dict):
+            meta["marketplace"] = marketplace
+        else:
+            meta = {"marketplace": marketplace}
+
+        Skills.update_skill_by_id(
+            installation.skill_id,
+            {
+                "content": parsed.instructions,
+                "description": parsed.description or skill_data.get("description", ""),
+                "meta": meta,
+            },
+            db=db,
+        )
+
+    # Update installation version
+    MarketplaceInstallations.update_installation_version(
+        installation_id, new_version, db=db
+    )
+
+    return {
+        "status": "ok",
+        "installed_version": new_version,
+    }
+
+
+############################
+# ClawHub Auth
+############################
+
+
+class ClawHubAuthForm(BaseModel):
+    token: str
+
+
+@router.post("/auth")
+async def save_clawhub_auth(
+    form_data: ClawHubAuthForm,
+    request: Request,
+    user=Depends(get_verified_user),
+    db: Session = Depends(get_session),
+):
+    """Save ClawHub API token for the current user."""
+    # Verify the token works
+    client = _get_clawhub_client(request)
+    try:
+        whoami = await client.check_auth(form_data.token)
+    except ClawHubError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid ClawHub token. Could not verify with ClawHub API.",
+        )
+
+    # Store token in user settings
+    from open_webui.models.users import Users
+
+    settings = user.settings or {}
+    if hasattr(settings, "model_dump"):
+        settings = settings.model_dump()
+
+    if "marketplace" not in settings:
+        settings["marketplace"] = {}
+    settings["marketplace"]["clawhub_token"] = form_data.token
+    settings["marketplace"]["clawhub_username"] = whoami.get("username", "")
+
+    Users.update_user_settings_by_id(user.id, settings, db=db)
+
+    return {
+        "status": "ok",
+        "username": whoami.get("username", ""),
+        "token_prefix": form_data.token[:8] + "..." if len(form_data.token) > 8 else "",
+    }
+
+
+@router.delete("/auth")
+async def remove_clawhub_auth(
+    user=Depends(get_verified_user),
+    db: Session = Depends(get_session),
+):
+    """Remove ClawHub API token for the current user."""
+    from open_webui.models.users import Users
+
+    settings = user.settings or {}
+    if hasattr(settings, "model_dump"):
+        settings = settings.model_dump()
+
+    if "marketplace" in settings:
+        settings["marketplace"].pop("clawhub_token", None)
+        settings["marketplace"].pop("clawhub_username", None)
+
+    Users.update_user_settings_by_id(user.id, settings, db=db)
+
+    return {"status": "ok"}
+
+
+@router.get("/auth/status")
+async def get_auth_status(
+    user=Depends(get_verified_user),
+):
+    """Check if user has a ClawHub API token configured."""
+    settings = user.settings or {}
+    if hasattr(settings, "model_dump"):
+        settings = settings.model_dump()
+
+    marketplace = settings.get("marketplace", {}) if isinstance(settings, dict) else {}
+    token = marketplace.get("clawhub_token", "")
+    username = marketplace.get("clawhub_username", "")
+
+    return {
+        "authenticated": bool(token),
+        "username": username,
+        "token_prefix": (token[:8] + "..." if len(token) > 8 else "") if token else "",
+    }

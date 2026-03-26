@@ -1800,6 +1800,22 @@ ENABLE_COMMUNITY_SHARING = PersistentConfig(
     os.environ.get("ENABLE_COMMUNITY_SHARING", "True").lower() == "true",
 )
 
+####################################
+# Marketplace (ClawHub) Config
+####################################
+
+ENABLE_MARKETPLACE = PersistentConfig(
+    "ENABLE_MARKETPLACE",
+    "marketplace.enable",
+    os.environ.get("ENABLE_MARKETPLACE", "True").lower() == "true",
+)
+
+CLAWHUB_API_URL = PersistentConfig(
+    "CLAWHUB_API_URL",
+    "marketplace.clawhub_api_url",
+    os.environ.get("CLAWHUB_API_URL", "https://clawhub.ai"),
+)
+
 ENABLE_MESSAGE_RATING = PersistentConfig(
     "ENABLE_MESSAGE_RATING",
     "ui.enable_message_rating",
