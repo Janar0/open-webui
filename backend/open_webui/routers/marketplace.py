@@ -170,6 +170,7 @@ async def search_catalog(
     q: Optional[str] = "",
     cursor: Optional[str] = None,
     limit: Optional[int] = 30,
+    non_suspicious_only: bool = False,
     user=Depends(get_verified_user),
 ):
     """Search or browse ClawHub skill catalog."""
@@ -182,6 +183,7 @@ async def search_catalog(
             query=q or "",
             cursor=cursor,
             limit=limit or 30,
+            non_suspicious_only=non_suspicious_only,
             token=token,
         )
         return result

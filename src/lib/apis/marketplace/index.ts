@@ -31,12 +31,14 @@ export const searchCatalog = async (
 	token: string,
 	query: string = '',
 	cursor: string = '',
-	limit: number = 30
+	limit: number = 30,
+	nonSuspiciousOnly: boolean = false
 ) => {
 	const params = new URLSearchParams();
 	if (query) params.set('q', query);
 	if (cursor) params.set('cursor', cursor);
 	if (limit && limit !== 30) params.set('limit', String(limit));
+	if (nonSuspiciousOnly) params.set('non_suspicious_only', 'true');
 	return apiCall(`${MARKETPLACE_API}/catalog?${params.toString()}`, token);
 };
 
