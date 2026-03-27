@@ -363,7 +363,7 @@ async def install_skill(
     auto_deployed = False
     scripts_path = None
     if skill_type == "sandbox":
-        from open_webui.services.skill_deployer import SkillDeployer
+        from open_webui.services.skill_deployer import SkillDeployer, SkillDeployError
 
         deployer = SkillDeployer()
         connections = _get_terminal_connections(request)
@@ -428,8 +428,10 @@ async def install_skill(
                     installation_id, config, db=db
                 )
                 log.info(f"Deployed SKILL.md for {form_data.slug} to terminal at {scripts_path}")
-            except Exception as e:
+            except SkillDeployError as e:
                 log.warning(f"Failed to deploy SKILL.md for {form_data.slug}: {e}")
+            except Exception as e:
+                log.warning(f"Unexpected error deploying SKILL.md for {form_data.slug}: {e}")
 
     # Build installation warnings
     warnings = []

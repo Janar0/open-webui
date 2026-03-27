@@ -267,7 +267,7 @@
 			// Extract setup/auth lines from SKILL.md instructions (lines with commands like auth, setup, credentials)
 			const setupLines = result.skill_content
 				.split('\n')
-				.filter((line: string) => /auth|setup|credential|login|token|key|configure/i.test(line))
+				.filter((line: string) => /auth|setup|credential|login|api[_\s-]?key|token|configure/i.test(line))
 				.slice(0, 8)
 				.join('\n');
 			if (setupLines) {

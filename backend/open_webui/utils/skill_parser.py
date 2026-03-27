@@ -82,6 +82,8 @@ def parse_skill_md(content: str) -> SkillMetadata:
     install_steps = meta_block.get("install", []) or []
     if not isinstance(install_steps, list):
         install_steps = []
+    else:
+        install_steps = [s for s in install_steps if isinstance(s, dict)]
 
     return SkillMetadata(
         name=frontmatter.get("name", "unknown"),
