@@ -48,9 +48,9 @@ class SkillDeployer:
         """
         Extract a skill ZIP archive and write files to terminal.
 
-        Returns the base directory path in the terminal (e.g., "clawhub-skills/todoist-manager").
+        Returns the base directory path in the terminal (e.g., "todoist-manager").
         """
-        base_dir = f"clawhub-skills/{self._sanitize_slug(skill_slug)}"
+        base_dir = self._sanitize_slug(skill_slug)
 
         # Extract ZIP contents
         try:
@@ -103,7 +103,7 @@ class SkillDeployer:
         Returns base directory path.
         Raises SkillDeployError if any file write fails.
         """
-        base_dir = f"clawhub-skills/{self._sanitize_slug(skill_slug)}"
+        base_dir = self._sanitize_slug(skill_slug)
         written = 0
 
         async with aiohttp.ClientSession(timeout=DEPLOY_TIMEOUT) as session:
@@ -221,6 +221,27 @@ class SkillDeployer:
                 files = {k[prefix_len:]: v for k, v in files.items() if k[prefix_len:]}
 
         return files
+
+    async def deploy_skill_md(
+        self,
+        terminal_url: str,
+        auth_headers: dict,
+        skill_slug: str,
+        skill_content: str,
+    ) -> str:
+        """
+        Create a skill directory and write SKILL.md to it.
+
+        Used for skills that have no scripts but still need a folder on the terminal.
+        Returns the base directory path.
+        """
+        base_dir = self._sanitize_slug(skill_slug)
+        async with aiohttp.ClientSession(timeout=DEPLOY_TIMEOUT) as session:
+            await self._write_file(
+                session, terminal_url, auth_headers, f"{base_dir}/SKILL.md", skill_content
+            )
+        log.info(f"Deployed SKILL.md for {skill_slug} to terminal at {base_dir}")
+        return base_dir
 
     async def _write_file(
         self, session: aiohttp.ClientSession, url: str, headers: dict, path: str, content: str

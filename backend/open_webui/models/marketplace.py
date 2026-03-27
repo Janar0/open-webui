@@ -86,6 +86,8 @@ class MarketplaceInstallResponse(BaseModel):
     warnings: list[str] = []
     auto_deployed: bool = False
     scripts_path: Optional[str] = None
+    install_steps: list[dict] = []
+    skill_content: str = ""
 
 
 ####################

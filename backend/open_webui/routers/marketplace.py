@@ -363,22 +363,23 @@ async def install_skill(
     auto_deployed = False
     scripts_path = None
     if skill_type == "sandbox":
+        from open_webui.services.skill_deployer import SkillDeployer
+
+        deployer = SkillDeployer()
+        connections = _get_terminal_connections(request)
+        terminal = _find_terminal_connection(connections, "auto")
+
         try:
             zip_bytes = await client.download_skill(
                 form_data.slug, version=version, token=token
             )
             if zip_bytes:
-                from open_webui.services.skill_deployer import SkillDeployer
-
-                deployer = SkillDeployer()
                 script_files = deployer.extract_zip(zip_bytes)
                 if script_files:
                     has_scripts = True
                     config = {"env": {}, "scripts": script_files, "scripts_deployed": False}
 
                     # Auto-deploy to first available terminal
-                    connections = _get_terminal_connections(request)
-                    terminal = _find_terminal_connection(connections, "auto")
                     if terminal:
                         try:
                             terminal_url = terminal.get("url", "")
@@ -406,6 +407,29 @@ async def install_skill(
                     )
         except Exception as e:
             log.warning(f"Failed to download skill scripts for {form_data.slug}: {e}")
+
+        # Even without scripts, create the skill folder with SKILL.md on the terminal
+        if not has_scripts and terminal:
+            try:
+                terminal_url = terminal.get("url", "")
+                headers = _build_terminal_headers(terminal, user.id)
+                scripts_path = await deployer.deploy_skill_md(
+                    terminal_url=terminal_url,
+                    auth_headers=headers,
+                    skill_slug=form_data.slug,
+                    skill_content=skill_content,
+                )
+                auto_deployed = True
+                config = installation.config or {}
+                config["scripts_path"] = scripts_path
+                config["scripts_deployed"] = True
+                config["deployed_terminal_id"] = terminal.get("id")
+                MarketplaceInstallations.update_installation_config(
+                    installation_id, config, db=db
+                )
+                log.info(f"Deployed SKILL.md for {form_data.slug} to terminal at {scripts_path}")
+            except Exception as e:
+                log.warning(f"Failed to deploy SKILL.md for {form_data.slug}: {e}")
 
     # Build installation warnings
     warnings = []
@@ -447,6 +471,8 @@ async def install_skill(
         warnings=warnings,
         auto_deployed=auto_deployed,
         scripts_path=scripts_path,
+        install_steps=parsed.install_steps,
+        skill_content=parsed.instructions,
     )
 
 

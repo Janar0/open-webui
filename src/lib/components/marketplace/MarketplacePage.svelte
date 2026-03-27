@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, getContext, tick } from 'svelte';
 	import { toast } from 'svelte-sonner';
+	import { goto } from '$app/navigation';
 	import { user } from '$lib/stores';
 
 	import {
@@ -151,6 +152,13 @@
 
 			await loadInstallations();
 
+			// If requires bins, open AI setup chat
+			if (result.requires_bins && result.requires_bins.length > 0) {
+				showDetail = false;
+				openSetupChat(result);
+				return;
+			}
+
 			// If requires env vars, open config modal
 			if (result.requires_env && result.requires_env.length > 0) {
 				configInstallationId = result.installation_id;
@@ -229,6 +237,51 @@
 
 	function getInstallationForSlug(slug: string) {
 		return installations.find((i: any) => i.external_slug === slug);
+	}
+
+	function openSetupChat(result: any) {
+		const locale = (typeof localStorage !== 'undefined' && localStorage.getItem('locale')) || 'en-US';
+
+		let prompt = `I just installed the "${result.name}" skill.`;
+
+		if (result.requires_bins?.length > 0) {
+			prompt += `\n\nTo get it working, I need to install the required CLI tool(s): **${result.requires_bins.join(', ')}**.`;
+		}
+
+		if (result.install_steps?.length > 0) {
+			const brewStep = result.install_steps.find((s: any) => s.kind === 'brew');
+			const aptStep = result.install_steps.find((s: any) => s.kind === 'apt' || s.kind === 'apt-get');
+			if (brewStep) {
+				prompt += `\n\nTo install via Homebrew:\n\`\`\`\nbrew install ${brewStep.formula}\n\`\`\``;
+			} else if (aptStep) {
+				prompt += `\n\nTo install via apt:\n\`\`\`\napt-get install ${aptStep.package || aptStep.formula}\n\`\`\``;
+			} else {
+				const firstStep = result.install_steps[0];
+				if (firstStep?.label) {
+					prompt += `\n\nInstall option: ${firstStep.label}`;
+				}
+			}
+		}
+
+		if (result.skill_content) {
+			// Extract setup/auth lines from SKILL.md instructions (lines with commands like auth, setup, credentials)
+			const setupLines = result.skill_content
+				.split('\n')
+				.filter((line: string) => /auth|setup|credential|login|token|key|configure/i.test(line))
+				.slice(0, 8)
+				.join('\n');
+			if (setupLines) {
+				prompt += `\n\n**Then configure it:**\n${setupLines}`;
+			}
+		}
+
+		prompt += '\n\nPlease guide me step by step, starting by checking if the tool is installed.';
+
+		if (!locale.startsWith('en')) {
+			prompt += `\n\nNote: please respond in ${locale} — that is the user's interface language.`;
+		}
+
+		goto(`/?q=${encodeURIComponent(prompt)}`);
 	}
 </script>
 
