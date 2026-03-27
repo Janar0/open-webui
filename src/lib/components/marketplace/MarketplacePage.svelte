@@ -41,13 +41,15 @@
 	let showDetail = false;
 	let detailSkill: any = null;
 	let detailPreview = '';
-	let detailInstalled = false;
-	let detailInstalling = false;
 
 	// Config modal
 	let showConfig = false;
 	let configInstallationId = '';
 	let configSkillName = '';
+	// Reactively derive configInstallation so it refreshes after loadInstallations
+	$: configInstallation = configInstallationId
+		? installations.find((i: any) => i.id === configInstallationId) || null
+		: null;
 
 	onMount(async () => {
 		await loadInstallations();
@@ -130,6 +132,16 @@
 
 			toast.success($i18n.t('Skill installed successfully'));
 
+			// Show auto-deploy result
+			if (result.auto_deployed && result.scripts_path) {
+				toast.success(
+					$i18n.t('Scripts auto-deployed to terminal at {{path}}', {
+						path: result.scripts_path
+					}),
+					{ duration: 6000 }
+				);
+			}
+
 			// Show warnings (e.g., sandbox requirements)
 			if (result.warnings && result.warnings.length > 0) {
 				for (const warning of result.warnings) {
@@ -137,14 +149,14 @@
 				}
 			}
 
+			await loadInstallations();
+
 			// If requires env vars, open config modal
 			if (result.requires_env && result.requires_env.length > 0) {
 				configInstallationId = result.installation_id;
 				configSkillName = result.name;
 				showConfig = true;
 			}
-
-			await loadInstallations();
 			showDetail = false;
 		} catch (err) {
 			toast.error(`${$i18n.t('Failed to install skill')}: ${err}`);
@@ -177,17 +189,13 @@
 	}
 
 	async function handleDeploy(installationId: string) {
-		if (!$selectedTerminalId) {
-			toast.error($i18n.t('Please select a terminal first in the chat interface'));
-			return;
-		}
-
 		deployingIds.add(installationId);
 		deployingIds = deployingIds;
 
 		try {
 			const token = localStorage.token;
-			await deployToTerminal(token, installationId, $selectedTerminalId);
+			// Use selected terminal or 'auto' to let backend pick first available
+			await deployToTerminal(token, installationId, $selectedTerminalId || 'auto');
 			toast.success($i18n.t('Scripts deployed to terminal'));
 			await loadInstallations();
 		} catch (err) {
@@ -201,8 +209,6 @@
 	async function openDetail(skill: any) {
 		detailSkill = skill;
 		detailPreview = '';
-		detailInstalled = installedSlugs.has(skill.slug || skill.id || '');
-		detailInstalling = false;
 		showDetail = true;
 
 		// Load preview
@@ -215,9 +221,9 @@
 		}
 	}
 
-	function openConfigure(installation: any) {
-		configInstallationId = installation.id;
-		configSkillName = installation.meta?.name || installation.external_slug || '';
+	function openConfigure(inst: any) {
+		configInstallationId = inst.id;
+		configSkillName = inst.meta?.name || inst.external_slug || '';
 		showConfig = true;
 	}
 
@@ -395,10 +401,7 @@
 								{:else}
 									<button
 										class="text-xs px-2 py-1 bg-purple-500/10 text-purple-600 dark:text-purple-400 rounded-lg hover:bg-purple-500/20 transition disabled:opacity-50"
-										disabled={deployingIds.has(installation.id) || !$selectedTerminalId}
-										title={!$selectedTerminalId
-											? $i18n.t('Select a terminal in chat first')
-											: ''}
+										disabled={deployingIds.has(installation.id)}
 										on:click={() => handleDeploy(installation.id)}
 									>
 										{deployingIds.has(installation.id)
@@ -448,5 +451,6 @@
 	token={localStorage.token}
 	installationId={configInstallationId}
 	skillName={configSkillName}
+	installation={configInstallation}
 	onSave={loadInstallations}
 />

@@ -60,6 +60,32 @@ def _check_marketplace_enabled(request: Request):
         )
 
 
+def _get_terminal_connections(request: Request) -> list:
+    """Get terminal server connections from config."""
+    connections = getattr(request.app.state.config, "TERMINAL_SERVER_CONNECTIONS", None)
+    if connections is None:
+        return []
+    if hasattr(connections, "value"):
+        connections = connections.value or []
+    return connections or []
+
+
+def _find_terminal_connection(connections: list, terminal_id: str) -> Optional[dict]:
+    """Find a terminal connection by ID, or the first enabled one if terminal_id is 'auto'."""
+    if terminal_id == "auto":
+        return next((c for c in connections if c.get("enabled", True)), None)
+    return next((c for c in connections if c.get("id") == terminal_id), None)
+
+
+def _build_terminal_headers(connection: dict, user_id: str) -> dict:
+    """Build auth headers for communicating with an open-terminal server."""
+    auth_type = connection.get("auth_type", "bearer")
+    headers = {"Content-Type": "application/json", "X-User-Id": user_id}
+    if auth_type == "bearer":
+        headers["Authorization"] = f"Bearer {connection.get('key', '')}"
+    return headers
+
+
 ############################
 # Admin Config
 ############################
@@ -332,8 +358,10 @@ async def install_skill(
             detail="Failed to create installation record.",
         )
 
-    # Download skill scripts for sandbox skills (non-blocking)
+    # Download skill scripts for sandbox skills and auto-deploy to terminal
     has_scripts = False
+    auto_deployed = False
+    scripts_path = None
     if skill_type == "sandbox":
         try:
             zip_bytes = await client.download_skill(
@@ -343,10 +371,36 @@ async def install_skill(
                 from open_webui.services.skill_deployer import SkillDeployer
 
                 deployer = SkillDeployer()
-                script_files = deployer._extract_zip(zip_bytes)
+                script_files = deployer.extract_zip(zip_bytes)
                 if script_files:
                     has_scripts = True
                     config = {"env": {}, "scripts": script_files, "scripts_deployed": False}
+
+                    # Auto-deploy to first available terminal
+                    connections = _get_terminal_connections(request)
+                    terminal = _find_terminal_connection(connections, "auto")
+                    if terminal:
+                        try:
+                            terminal_url = terminal.get("url", "")
+                            headers = _build_terminal_headers(terminal, user.id)
+                            scripts_path = await deployer.deploy_from_files(
+                                terminal_url=terminal_url,
+                                auth_headers=headers,
+                                skill_slug=form_data.slug,
+                                files=script_files,
+                            )
+                            # Run post-deploy setup (npm install, pip install, etc.)
+                            await deployer.run_post_deploy_setup(
+                                terminal_url, headers, scripts_path, script_files
+                            )
+                            config["scripts_path"] = scripts_path
+                            config["scripts_deployed"] = True
+                            config["deployed_terminal_id"] = terminal.get("id")
+                            auto_deployed = True
+                            log.info(f"Auto-deployed skill {form_data.slug} to terminal at {scripts_path}")
+                        except Exception as e:
+                            log.warning(f"Auto-deploy failed for {form_data.slug}: {e}")
+
                     MarketplaceInstallations.update_installation_config(
                         installation_id, config, db=db
                     )
@@ -356,7 +410,12 @@ async def install_skill(
     # Build installation warnings
     warnings = []
     if requires_bins:
-        if has_scripts:
+        if has_scripts and auto_deployed:
+            warnings.append(
+                f"Scripts deployed to terminal at {scripts_path}. "
+                f"Required CLI tools: {', '.join(requires_bins)}."
+            )
+        elif has_scripts:
             warnings.append(
                 f"This skill has scripts that require CLI tools ({', '.join(requires_bins)}). "
                 "Deploy them to your terminal using the 'Deploy to Terminal' button."
@@ -386,6 +445,8 @@ async def install_skill(
         requires_bins=requires_bins,
         skill_type=skill_type,
         warnings=warnings,
+        auto_deployed=auto_deployed,
+        scripts_path=scripts_path,
     )
 
 
@@ -596,38 +657,31 @@ async def deploy_to_terminal(
             detail="No scripts found for this skill. Re-install to download scripts.",
         )
 
-    # Find terminal connection
-    connections = request.app.state.config.TERMINAL_SERVER_CONNECTIONS or []
-    if hasattr(connections, "value"):
-        connections = connections.value or []
-    connection = next(
-        (c for c in connections if c.get("id") == form_data.terminal_id), None
-    )
+    # Find terminal connection (supports "auto" to pick first available)
+    connections = _get_terminal_connections(request)
+    connection = _find_terminal_connection(connections, form_data.terminal_id)
     if connection is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Terminal server not found.",
+            detail="Terminal server not found. Configure a terminal in Admin > Integrations.",
         )
 
-    # Check user has access to this terminal
-    from open_webui.models.groups import Groups
-    from open_webui.utils.access_control import has_connection_access
+    # Check user has access to this terminal (skip for "auto" — admin configured)
+    if form_data.terminal_id != "auto":
+        from open_webui.models.groups import Groups
+        from open_webui.utils.access_control import has_connection_access
 
-    user_group_ids = {group.id for group in Groups.get_groups_by_member_id(user.id, db=db)}
-    if not has_connection_access(user, connection, user_group_ids):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to access this terminal.",
-        )
+        user_group_ids = {group.id for group in Groups.get_groups_by_member_id(user.id, db=db)}
+        if not has_connection_access(user, connection, user_group_ids):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to access this terminal.",
+            )
 
-    # Build auth headers for terminal
+    # Build auth headers and deploy
     terminal_url = connection.get("url", "")
-    auth_type = connection.get("auth_type", "bearer")
-    headers = {"Content-Type": "application/json", "X-User-Id": user.id}
-    if auth_type == "bearer":
-        headers["Authorization"] = f"Bearer {connection.get('key', '')}"
+    headers = _build_terminal_headers(connection, user.id)
 
-    # Deploy
     from open_webui.services.skill_deployer import SkillDeployer
 
     deployer = SkillDeployer()
@@ -638,6 +692,10 @@ async def deploy_to_terminal(
             skill_slug=installation.external_slug,
             files=scripts,
         )
+        # Run post-deploy setup (npm install, pip install, etc.)
+        await deployer.run_post_deploy_setup(
+            terminal_url, headers, scripts_path, scripts
+        )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -645,9 +703,10 @@ async def deploy_to_terminal(
         )
 
     # Update config with deployment info
+    actual_terminal_id = form_data.terminal_id if form_data.terminal_id != "auto" else connection.get("id", "auto")
     config["scripts_path"] = scripts_path
     config["scripts_deployed"] = True
-    config["deployed_terminal_id"] = form_data.terminal_id
+    config["deployed_terminal_id"] = actual_terminal_id
     MarketplaceInstallations.update_installation_config(
         installation_id, config, db=db
     )
@@ -655,7 +714,7 @@ async def deploy_to_terminal(
     return {
         "status": "ok",
         "scripts_path": scripts_path,
-        "terminal_id": form_data.terminal_id,
+        "terminal_id": actual_terminal_id,
     }
 
 
