@@ -58,6 +58,7 @@
 	});
 
 	function sortResults(items: any[]): any[] {
+		if (sortBy === 'relevance') return items;
 		const sorted = [...items];
 		switch (sortBy) {
 			case 'downloads':
@@ -101,6 +102,9 @@
 
 	function handleSearchInput() {
 		clearTimeout(searchDebounceTimer);
+		// Switch to relevance sort when querying, restore recent when cleared
+		if (query && sortBy === 'recent') sortBy = 'relevance';
+		else if (!query && sortBy === 'relevance') sortBy = 'recent';
 		searchDebounceTimer = setTimeout(() => {
 			searchSkills();
 		}, 400);
@@ -338,6 +342,9 @@
 				bind:value={sortBy}
 				on:change={handleSortChange}
 			>
+				{#if sortBy === 'relevance'}
+					<option value="relevance">{$i18n.t('Relevance')}</option>
+				{/if}
 				<option value="recent">{$i18n.t('Recent')}</option>
 				<option value="downloads">{$i18n.t('Downloads')}</option>
 				<option value="installs">{$i18n.t('Popular')}</option>
