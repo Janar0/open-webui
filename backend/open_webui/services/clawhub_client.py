@@ -144,7 +144,6 @@ class ClawHubClient:
             params = {"q": query}
             if highlighted_only:
                 params["highlightedOnly"] = "true"
-            params["nonSuspiciousOnly"] = "true"
             raw = await self._request("/search", params=params, token=token)
             items = [self._normalize_search_item(r) for r in raw.get("results", [])]
             return {"items": items, "nextCursor": ""}
@@ -152,7 +151,6 @@ class ClawHubClient:
             params = {"limit": str(limit)}
             if cursor:
                 params["cursor"] = cursor
-            params["nonSuspiciousOnly"] = "true"
             raw = await self._request("/skills", params=params, token=token)
             items = [self._normalize_list_item(s) for s in raw.get("items", [])]
             return {"items": items, "nextCursor": raw.get("nextCursor", "")}
