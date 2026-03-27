@@ -371,7 +371,7 @@ async def install_skill(
                 from open_webui.services.skill_deployer import SkillDeployer
 
                 deployer = SkillDeployer()
-                script_files = deployer._extract_zip(zip_bytes)
+                script_files = deployer.extract_zip(zip_bytes)
                 if script_files:
                     has_scripts = True
                     config = {"env": {}, "scripts": script_files, "scripts_deployed": False}

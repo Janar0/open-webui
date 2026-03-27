@@ -41,8 +41,6 @@
 	let showDetail = false;
 	let detailSkill: any = null;
 	let detailPreview = '';
-	let detailInstalled = false;
-	let detailInstalling = false;
 
 	// Config modal
 	let showConfig = false;
@@ -211,8 +209,6 @@
 	async function openDetail(skill: any) {
 		detailSkill = skill;
 		detailPreview = '';
-		detailInstalled = installedSlugs.has(skill.slug || skill.id || '');
-		detailInstalling = false;
 		showDetail = true;
 
 		// Load preview

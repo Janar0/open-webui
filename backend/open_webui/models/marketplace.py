@@ -32,8 +32,8 @@ class MarketplaceInstallation(Base):
     installed_version = Column(Text, nullable=False)
     latest_version = Column(Text, nullable=True)
     auto_update = Column(Boolean, default=False)
-    config = Column(JSONField, default={})
-    meta = Column(JSONField, default={})
+    config = Column(JSONField, default=dict)
+    meta = Column(JSONField, default=dict)
 
     updated_at = Column(BigInteger)
     created_at = Column(BigInteger)
