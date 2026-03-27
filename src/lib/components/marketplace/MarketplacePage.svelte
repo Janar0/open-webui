@@ -48,7 +48,10 @@
 	let showConfig = false;
 	let configInstallationId = '';
 	let configSkillName = '';
-	let configInstallation: any = null;
+	// Reactively derive configInstallation so it refreshes after loadInstallations
+	$: configInstallation = configInstallationId
+		? installations.find((i: any) => i.id === configInstallationId) || null
+		: null;
 
 	onMount(async () => {
 		await loadInstallations();
@@ -154,8 +157,6 @@
 			if (result.requires_env && result.requires_env.length > 0) {
 				configInstallationId = result.installation_id;
 				configSkillName = result.name;
-				// Find the freshly loaded installation to pass deploy status
-				configInstallation = installations.find((i: any) => i.id === result.installation_id) || null;
 				showConfig = true;
 			}
 			showDetail = false;
@@ -227,7 +228,6 @@
 	function openConfigure(inst: any) {
 		configInstallationId = inst.id;
 		configSkillName = inst.meta?.name || inst.external_slug || '';
-		configInstallation = inst;
 		showConfig = true;
 	}
 

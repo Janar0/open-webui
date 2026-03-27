@@ -38,7 +38,7 @@
 		spec = null;
 		try {
 			spec = await getInstallationConfigSpec(token, installationId);
-			// Initialize values from current config or empty
+			// Initialize values empty — current_values are shown as masked labels
 			values = {};
 			for (const key of Object.keys(spec.properties || {})) {
 				values[key] = '';

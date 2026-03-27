@@ -62,7 +62,9 @@ def _check_marketplace_enabled(request: Request):
 
 def _get_terminal_connections(request: Request) -> list:
     """Get terminal server connections from config."""
-    connections = request.app.state.config.TERMINAL_SERVER_CONNECTIONS
+    connections = getattr(request.app.state.config, "TERMINAL_SERVER_CONNECTIONS", None)
+    if connections is None:
+        return []
     if hasattr(connections, "value"):
         connections = connections.value or []
     return connections or []
@@ -712,7 +714,7 @@ async def deploy_to_terminal(
     return {
         "status": "ok",
         "scripts_path": scripts_path,
-        "terminal_id": form_data.terminal_id,
+        "terminal_id": actual_terminal_id,
     }
 
 
