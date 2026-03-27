@@ -84,6 +84,8 @@ class MarketplaceInstallResponse(BaseModel):
     requires_bins: list[str] = []
     skill_type: str = "prompt"  # "prompt" (text-only) or "sandbox" (needs execution)
     warnings: list[str] = []
+    auto_deployed: bool = False
+    scripts_path: Optional[str] = None
 
 
 ####################

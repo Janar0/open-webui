@@ -120,6 +120,40 @@ class SkillDeployer:
 
         return base_dir
 
+    async def run_post_deploy_setup(
+        self,
+        terminal_url: str,
+        auth_headers: dict,
+        base_dir: str,
+        files: dict,
+    ) -> list[str]:
+        """
+        Run post-deploy setup commands (npm install, pip install, etc.).
+
+        Returns a list of setup result messages.
+        """
+        results = []
+
+        if "package.json" in files or "package-lock.json" in files:
+            out = await self._execute(
+                terminal_url,
+                auth_headers,
+                "npm install 2>&1 | tail -20",
+                cwd=base_dir,
+            )
+            results.append(f"npm install: {out or 'done'}")
+
+        if "requirements.txt" in files:
+            out = await self._execute(
+                terminal_url,
+                auth_headers,
+                "pip install -q -r requirements.txt 2>&1 | tail -10",
+                cwd=base_dir,
+            )
+            results.append(f"pip install: {out or 'done'}")
+
+        return results
+
     def _extract_zip(self, zip_bytes: bytes) -> dict:
         """Extract ZIP to dict of {relative_path: text_content}."""
         files = {}
