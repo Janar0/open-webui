@@ -83,7 +83,13 @@
 		loading = true;
 		try {
 			const token = localStorage.token;
-			const result = await searchCatalog(token, query, append ? nextCursor : '', 30, nonSuspiciousOnly);
+			const result = await searchCatalog(
+				token,
+				query,
+				append ? nextCursor : '',
+				30,
+				nonSuspiciousOnly
+			);
 			let items: any[] = result?.items || [];
 			nextCursor = result?.nextCursor || '';
 
@@ -245,7 +251,8 @@
 	}
 
 	function openSetupChat(result: any) {
-		const locale = (typeof localStorage !== 'undefined' && localStorage.getItem('locale')) || 'en-US';
+		const locale =
+			(typeof localStorage !== 'undefined' && localStorage.getItem('locale')) || 'en-US';
 
 		let prompt = `I just installed the "${result.name}" skill.`;
 
@@ -255,7 +262,9 @@
 
 		if (result.install_steps?.length > 0) {
 			const brewStep = result.install_steps.find((s: any) => s.kind === 'brew');
-			const aptStep = result.install_steps.find((s: any) => s.kind === 'apt' || s.kind === 'apt-get');
+			const aptStep = result.install_steps.find(
+				(s: any) => s.kind === 'apt' || s.kind === 'apt-get'
+			);
 			if (brewStep) {
 				prompt += `\n\nTo install via Homebrew:\n\`\`\`\nbrew install ${brewStep.formula}\n\`\`\``;
 			} else if (aptStep) {
@@ -272,7 +281,9 @@
 			// Extract setup/auth lines from SKILL.md instructions (lines with commands like auth, setup, credentials)
 			const setupLines = result.skill_content
 				.split('\n')
-				.filter((line: string) => /auth|setup|credential|login|api[_\s-]?key|token|configure/i.test(line))
+				.filter((line: string) =>
+					/auth|setup|credential|login|api[_\s-]?key|token|configure/i.test(line)
+				)
 				.slice(0, 8)
 				.join('\n');
 			if (setupLines) {
@@ -313,9 +324,7 @@
 			>
 				{$i18n.t('Installed')}
 				{#if installations.length > 0}
-					<span
-						class="ml-1 text-xs bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 rounded-full"
-					>
+					<span class="ml-1 text-xs bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 rounded-full">
 						{installations.length}
 					</span>
 				{/if}
@@ -354,10 +363,15 @@
 			<button
 				class="flex items-center gap-1.5 px-3 py-2 text-sm border rounded-xl transition
 					{nonSuspiciousOnly
-						? 'border-green-400 dark:border-green-600 text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20'
-						: 'border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400'}"
-				title={nonSuspiciousOnly ? $i18n.t('Hiding suspicious skills') : $i18n.t('Showing all skills')}
-				on:click={() => { nonSuspiciousOnly = !nonSuspiciousOnly; searchSkills(); }}
+					? 'border-green-400 dark:border-green-600 text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20'
+					: 'border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400'}"
+				title={nonSuspiciousOnly
+					? $i18n.t('Hiding suspicious skills')
+					: $i18n.t('Showing all skills')}
+				on:click={() => {
+					nonSuspiciousOnly = !nonSuspiciousOnly;
+					searchSkills();
+				}}
 			>
 				<span>{nonSuspiciousOnly ? '🛡️' : '⚠️'}</span>
 				<span class="hidden sm:inline">{nonSuspiciousOnly ? $i18n.t('Safe') : $i18n.t('All')}</span>

@@ -2,11 +2,7 @@ import { WEBUI_API_BASE_URL } from '$lib/constants';
 
 const MARKETPLACE_API = `${WEBUI_API_BASE_URL}/marketplace`;
 
-async function apiCall(
-	url: string,
-	token: string,
-	options: RequestInit = {}
-): Promise<any> {
+async function apiCall(url: string, token: string, options: RequestInit = {}): Promise<any> {
 	const res = await fetch(url, {
 		...options,
 		headers: {

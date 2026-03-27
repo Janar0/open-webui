@@ -39,7 +39,9 @@ class MarketplaceInstallation(Base):
     created_at = Column(BigInteger)
 
     __table_args__ = (
-        UniqueConstraint("user_id", "source", "external_slug", name="uq_user_source_slug"),
+        UniqueConstraint(
+            "user_id", "source", "external_slug", name="uq_user_source_slug"
+        ),
     )
 
 
@@ -146,9 +148,7 @@ class MarketplaceInstallationsTable:
     ) -> Optional[MarketplaceInstallationModel]:
         with get_db_context(db) as db:
             installation = (
-                db.query(MarketplaceInstallation)
-                .filter_by(skill_id=skill_id)
-                .first()
+                db.query(MarketplaceInstallation).filter_by(skill_id=skill_id).first()
             )
             if installation:
                 return MarketplaceInstallationModel.model_validate(installation)
@@ -169,7 +169,11 @@ class MarketplaceInstallationsTable:
             ]
 
     def get_installation_by_user_and_slug(
-        self, user_id: str, source: str, external_slug: str, db: Optional[Session] = None
+        self,
+        user_id: str,
+        source: str,
+        external_slug: str,
+        db: Optional[Session] = None,
     ) -> Optional[MarketplaceInstallationModel]:
         with get_db_context(db) as db:
             installation = (

@@ -65,7 +65,9 @@ class SkillDeployer:
         async with aiohttp.ClientSession(timeout=DEPLOY_TIMEOUT) as session:
             for rel_path, content in files.items():
                 full_path = f"{base_dir}/{rel_path}"
-                await self._write_file(session, terminal_url, auth_headers, full_path, content)
+                await self._write_file(
+                    session, terminal_url, auth_headers, full_path, content
+                )
 
             # Make scripts executable
             await self._execute(
@@ -114,11 +116,15 @@ class SkillDeployer:
                     log.warning(f"Skipping unsafe path: {rel_path}")
                     continue
                 full_path = f"{base_dir}/{normalized}"
-                await self._write_file(session, terminal_url, auth_headers, full_path, content)
+                await self._write_file(
+                    session, terminal_url, auth_headers, full_path, content
+                )
                 written += 1
 
             if written == 0:
-                raise SkillDeployError("No files were written — all paths were unsafe or empty")
+                raise SkillDeployError(
+                    "No files were written — all paths were unsafe or empty"
+                )
 
             # Make scripts executable
             await self._execute(
@@ -190,11 +196,30 @@ class SkillDeployer:
                     continue
                 # Skip very large files (>1MB)
                 if info.file_size > 1_000_000:
-                    log.warning(f"Skipping large file: {info.filename} ({info.file_size} bytes)")
+                    log.warning(
+                        f"Skipping large file: {info.filename} ({info.file_size} bytes)"
+                    )
                     continue
                 # Skip binary files by extension
-                ext = info.filename.rsplit(".", 1)[-1].lower() if "." in info.filename else ""
-                binary_exts = {"png", "jpg", "jpeg", "gif", "ico", "woff", "woff2", "ttf", "otf", "zip", "tar", "gz"}
+                ext = (
+                    info.filename.rsplit(".", 1)[-1].lower()
+                    if "." in info.filename
+                    else ""
+                )
+                binary_exts = {
+                    "png",
+                    "jpg",
+                    "jpeg",
+                    "gif",
+                    "ico",
+                    "woff",
+                    "woff2",
+                    "ttf",
+                    "otf",
+                    "zip",
+                    "tar",
+                    "gz",
+                }
                 if ext in binary_exts:
                     continue
 
@@ -238,13 +263,22 @@ class SkillDeployer:
         base_dir = self._sanitize_slug(skill_slug)
         async with aiohttp.ClientSession(timeout=DEPLOY_TIMEOUT) as session:
             await self._write_file(
-                session, terminal_url, auth_headers, f"{base_dir}/SKILL.md", skill_content
+                session,
+                terminal_url,
+                auth_headers,
+                f"{base_dir}/SKILL.md",
+                skill_content,
             )
         log.info(f"Deployed SKILL.md for {skill_slug} to terminal at {base_dir}")
         return base_dir
 
     async def _write_file(
-        self, session: aiohttp.ClientSession, url: str, headers: dict, path: str, content: str
+        self,
+        session: aiohttp.ClientSession,
+        url: str,
+        headers: dict,
+        path: str,
+        content: str,
     ):
         """Write a file to terminal via open-terminal API (POST /files/write).
 
