@@ -304,7 +304,9 @@ def get_citation_source_from_tool_result(
             if isinstance(tool_result, dict):
                 content = tool_result.get("content", str(tool_result))
             else:
-                content = tool_result if isinstance(tool_result, str) else str(tool_result)
+                content = (
+                    tool_result if isinstance(tool_result, str) else str(tool_result)
+                )
             snippet = content[:500] + ("..." if len(content) > 500 else "")
 
             return [
@@ -336,13 +338,17 @@ def get_citation_source_from_tool_result(
                 documents.append(snippet)
                 metadata.append({"source": url, "name": title, "url": url})
 
-            return [
-                {
-                    "source": {"name": "deep_search", "id": "deep_search"},
-                    "document": documents,
-                    "metadata": metadata,
-                }
-            ] if documents else []
+            return (
+                [
+                    {
+                        "source": {"name": "deep_search", "id": "deep_search"},
+                        "document": documents,
+                        "metadata": metadata,
+                    }
+                ]
+                if documents
+                else []
+            )
 
         elif tool_name == "query_knowledge_files":
             chunks = tool_result
@@ -2512,6 +2518,21 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                                     "NEVER output credential values to the user.\n</config>\n\n"
                                     + skill_content
                                 )
+                            elif not terminal_id and isinstance(skill_meta, dict):
+                                # Sandbox skill but no terminal connected — instruct AI to prompt user
+                                mp = skill_meta.get("marketplace", {})
+                                requires_bins = mp.get("requires_bins", [])
+                                if requires_bins:
+                                    bins_str = ", ".join(requires_bins)
+                                    skill_content = (
+                                        f"<terminal_required>\n"
+                                        f"This skill needs a terminal to run ({bins_str}). "
+                                        f"No terminal is currently connected.\n"
+                                        f'Tell the user: "To use this skill, please enable the terminal '
+                                        f'in the chat panel and send your message again."\n'
+                                        f"Do not attempt to run commands — wait for the user to connect a terminal.\n"
+                                        f"</terminal_required>\n\n"
+                                    ) + skill_content
                     except Exception as e:
                         log.warning(
                             f"Marketplace config injection failed for skill {skill.id}: {e}"
