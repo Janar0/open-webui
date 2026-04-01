@@ -104,7 +104,8 @@ class SkillDeployer:
         Returns base directory path.
         Raises SkillDeployError if any file write fails.
         """
-        base_dir = f"skills/{self._sanitize_slug(skill_slug)}"        written = 0
+        base_dir = f"skills/{self._sanitize_slug(skill_slug)}"
+        written = 0
 
         async with aiohttp.ClientSession(timeout=DEPLOY_TIMEOUT) as session:
             for rel_path, content in files.items():
