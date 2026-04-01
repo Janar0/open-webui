@@ -48,10 +48,9 @@ class SkillDeployer:
         """
         Extract a skill ZIP archive and write files to terminal.
 
-        Returns the base directory path in the terminal (e.g., "todoist-manager").
+        Returns the base directory path in the terminal (e.g., "skills/todoist-manager").
         """
-        base_dir = self._sanitize_slug(skill_slug)
-
+        base_dir = f"skills/{self._sanitize_slug(skill_slug)}"
         # Extract ZIP contents
         try:
             files = self.extract_zip(zip_bytes)
@@ -105,8 +104,7 @@ class SkillDeployer:
         Returns base directory path.
         Raises SkillDeployError if any file write fails.
         """
-        base_dir = self._sanitize_slug(skill_slug)
-        written = 0
+        base_dir = f"skills/{self._sanitize_slug(skill_slug)}"        written = 0
 
         async with aiohttp.ClientSession(timeout=DEPLOY_TIMEOUT) as session:
             for rel_path, content in files.items():
@@ -260,8 +258,7 @@ class SkillDeployer:
         Used for skills that have no scripts but still need a folder on the terminal.
         Returns the base directory path.
         """
-        base_dir = self._sanitize_slug(skill_slug)
-        async with aiohttp.ClientSession(timeout=DEPLOY_TIMEOUT) as session:
+        base_dir = f"skills/{self._sanitize_slug(skill_slug)}"        async with aiohttp.ClientSession(timeout=DEPLOY_TIMEOUT) as session:
             await self._write_file(
                 session,
                 terminal_url,
