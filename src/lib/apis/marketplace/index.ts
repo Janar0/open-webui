@@ -2,11 +2,7 @@ import { WEBUI_API_BASE_URL } from '$lib/constants';
 
 const MARKETPLACE_API = `${WEBUI_API_BASE_URL}/marketplace`;
 
-async function apiCall(
-	url: string,
-	token: string,
-	options: RequestInit = {}
-): Promise<any> {
+async function apiCall(url: string, token: string, options: RequestInit = {}): Promise<any> {
 	const res = await fetch(url, {
 		...options,
 		headers: {
@@ -31,12 +27,14 @@ export const searchCatalog = async (
 	token: string,
 	query: string = '',
 	cursor: string = '',
-	limit: number = 30
+	limit: number = 30,
+	nonSuspiciousOnly: boolean = false
 ) => {
 	const params = new URLSearchParams();
 	if (query) params.set('q', query);
 	if (cursor) params.set('cursor', cursor);
 	if (limit && limit !== 30) params.set('limit', String(limit));
+	if (nonSuspiciousOnly) params.set('non_suspicious_only', 'true');
 	return apiCall(`${MARKETPLACE_API}/catalog?${params.toString()}`, token);
 };
 

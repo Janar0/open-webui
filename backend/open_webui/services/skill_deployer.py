@@ -48,10 +48,9 @@ class SkillDeployer:
         """
         Extract a skill ZIP archive and write files to terminal.
 
-        Returns the base directory path in the terminal (e.g., "clawhub-skills/todoist-manager").
+        Returns the base directory path in the terminal (e.g., "skills/todoist-manager").
         """
-        base_dir = f"clawhub-skills/{self._sanitize_slug(skill_slug)}"
-
+        base_dir = f"skills/{self._sanitize_slug(skill_slug)}"
         # Extract ZIP contents
         try:
             files = self.extract_zip(zip_bytes)
@@ -65,7 +64,9 @@ class SkillDeployer:
         async with aiohttp.ClientSession(timeout=DEPLOY_TIMEOUT) as session:
             for rel_path, content in files.items():
                 full_path = f"{base_dir}/{rel_path}"
-                await self._write_file(session, terminal_url, auth_headers, full_path, content)
+                await self._write_file(
+                    session, terminal_url, auth_headers, full_path, content
+                )
 
             # Make scripts executable
             await self._execute(
@@ -103,7 +104,7 @@ class SkillDeployer:
         Returns base directory path.
         Raises SkillDeployError if any file write fails.
         """
-        base_dir = f"clawhub-skills/{self._sanitize_slug(skill_slug)}"
+        base_dir = f"skills/{self._sanitize_slug(skill_slug)}"
         written = 0
 
         async with aiohttp.ClientSession(timeout=DEPLOY_TIMEOUT) as session:
@@ -114,11 +115,15 @@ class SkillDeployer:
                     log.warning(f"Skipping unsafe path: {rel_path}")
                     continue
                 full_path = f"{base_dir}/{normalized}"
-                await self._write_file(session, terminal_url, auth_headers, full_path, content)
+                await self._write_file(
+                    session, terminal_url, auth_headers, full_path, content
+                )
                 written += 1
 
             if written == 0:
-                raise SkillDeployError("No files were written — all paths were unsafe or empty")
+                raise SkillDeployError(
+                    "No files were written — all paths were unsafe or empty"
+                )
 
             # Make scripts executable
             await self._execute(
@@ -190,11 +195,30 @@ class SkillDeployer:
                     continue
                 # Skip very large files (>1MB)
                 if info.file_size > 1_000_000:
-                    log.warning(f"Skipping large file: {info.filename} ({info.file_size} bytes)")
+                    log.warning(
+                        f"Skipping large file: {info.filename} ({info.file_size} bytes)"
+                    )
                     continue
                 # Skip binary files by extension
-                ext = info.filename.rsplit(".", 1)[-1].lower() if "." in info.filename else ""
-                binary_exts = {"png", "jpg", "jpeg", "gif", "ico", "woff", "woff2", "ttf", "otf", "zip", "tar", "gz"}
+                ext = (
+                    info.filename.rsplit(".", 1)[-1].lower()
+                    if "." in info.filename
+                    else ""
+                )
+                binary_exts = {
+                    "png",
+                    "jpg",
+                    "jpeg",
+                    "gif",
+                    "ico",
+                    "woff",
+                    "woff2",
+                    "ttf",
+                    "otf",
+                    "zip",
+                    "tar",
+                    "gz",
+                }
                 if ext in binary_exts:
                     continue
 
@@ -222,8 +246,38 @@ class SkillDeployer:
 
         return files
 
+    async def deploy_skill_md(
+        self,
+        terminal_url: str,
+        auth_headers: dict,
+        skill_slug: str,
+        skill_content: str,
+    ) -> str:
+        """
+        Create a skill directory and write SKILL.md to it.
+
+        Used for skills that have no scripts but still need a folder on the terminal.
+        Returns the base directory path.
+        """
+        base_dir = f"skills/{self._sanitize_slug(skill_slug)}"
+        async with aiohttp.ClientSession(timeout=DEPLOY_TIMEOUT) as session:
+            await self._write_file(
+                session,
+                terminal_url,
+                auth_headers,
+                f"{base_dir}/SKILL.md",
+                skill_content,
+            )
+        log.info(f"Deployed SKILL.md for {skill_slug} to terminal at {base_dir}")
+        return base_dir
+
     async def _write_file(
-        self, session: aiohttp.ClientSession, url: str, headers: dict, path: str, content: str
+        self,
+        session: aiohttp.ClientSession,
+        url: str,
+        headers: dict,
+        path: str,
+        content: str,
     ):
         """Write a file to terminal via open-terminal API (POST /files/write).
 

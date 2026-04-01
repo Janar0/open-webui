@@ -33,7 +33,11 @@ router = APIRouter()
 
 def _get_clawhub_client(request: Request) -> ClawHubClient:
     clawhub_config = getattr(request.app.state.config, "CLAWHUB_API_URL", None)
-    base_url = clawhub_config.value if clawhub_config and hasattr(clawhub_config, "value") else None
+    base_url = (
+        clawhub_config.value
+        if clawhub_config and hasattr(clawhub_config, "value")
+        else None
+    )
     if not base_url and clawhub_config:
         base_url = str(clawhub_config)
     if base_url:
@@ -170,6 +174,7 @@ async def search_catalog(
     q: Optional[str] = "",
     cursor: Optional[str] = None,
     limit: Optional[int] = 30,
+    non_suspicious_only: bool = False,
     user=Depends(get_verified_user),
 ):
     """Search or browse ClawHub skill catalog."""
@@ -182,6 +187,7 @@ async def search_catalog(
             query=q or "",
             cursor=cursor,
             limit=limit or 30,
+            non_suspicious_only=non_suspicious_only,
             token=token,
         )
         return result
@@ -332,7 +338,11 @@ async def install_skill(
         )
 
     # Store marketplace metadata in skill.meta (update after creation)
-    updated_meta = skill.meta.model_dump() if hasattr(skill.meta, "model_dump") else dict(skill.meta)
+    updated_meta = (
+        skill.meta.model_dump()
+        if hasattr(skill.meta, "model_dump")
+        else dict(skill.meta)
+    )
     updated_meta["marketplace"] = marketplace_meta
     Skills.update_skill_by_id(skill_id, {"meta": updated_meta}, db=db)
 
@@ -363,22 +373,27 @@ async def install_skill(
     auto_deployed = False
     scripts_path = None
     if skill_type == "sandbox":
+        from open_webui.services.skill_deployer import SkillDeployer, SkillDeployError
+
+        deployer = SkillDeployer()
+        connections = _get_terminal_connections(request)
+        terminal = _find_terminal_connection(connections, "auto")
+
         try:
             zip_bytes = await client.download_skill(
                 form_data.slug, version=version, token=token
             )
             if zip_bytes:
-                from open_webui.services.skill_deployer import SkillDeployer
-
-                deployer = SkillDeployer()
                 script_files = deployer.extract_zip(zip_bytes)
                 if script_files:
                     has_scripts = True
-                    config = {"env": {}, "scripts": script_files, "scripts_deployed": False}
+                    config = {
+                        "env": {},
+                        "scripts": script_files,
+                        "scripts_deployed": False,
+                    }
 
                     # Auto-deploy to first available terminal
-                    connections = _get_terminal_connections(request)
-                    terminal = _find_terminal_connection(connections, "auto")
                     if terminal:
                         try:
                             terminal_url = terminal.get("url", "")
@@ -397,7 +412,9 @@ async def install_skill(
                             config["scripts_deployed"] = True
                             config["deployed_terminal_id"] = terminal.get("id")
                             auto_deployed = True
-                            log.info(f"Auto-deployed skill {form_data.slug} to terminal at {scripts_path}")
+                            log.info(
+                                f"Auto-deployed skill {form_data.slug} to terminal at {scripts_path}"
+                            )
                         except Exception as e:
                             log.warning(f"Auto-deploy failed for {form_data.slug}: {e}")
 
@@ -406,6 +423,35 @@ async def install_skill(
                     )
         except Exception as e:
             log.warning(f"Failed to download skill scripts for {form_data.slug}: {e}")
+
+        # Even without scripts, create the skill folder with SKILL.md on the terminal
+        if not has_scripts and terminal:
+            try:
+                terminal_url = terminal.get("url", "")
+                headers = _build_terminal_headers(terminal, user.id)
+                scripts_path = await deployer.deploy_skill_md(
+                    terminal_url=terminal_url,
+                    auth_headers=headers,
+                    skill_slug=form_data.slug,
+                    skill_content=skill_content,
+                )
+                auto_deployed = True
+                config = installation.config or {}
+                config["scripts_path"] = scripts_path
+                config["scripts_deployed"] = True
+                config["deployed_terminal_id"] = terminal.get("id")
+                MarketplaceInstallations.update_installation_config(
+                    installation_id, config, db=db
+                )
+                log.info(
+                    f"Deployed SKILL.md for {form_data.slug} to terminal at {scripts_path}"
+                )
+            except SkillDeployError as e:
+                log.warning(f"Failed to deploy SKILL.md for {form_data.slug}: {e}")
+            except Exception as e:
+                log.warning(
+                    f"Unexpected error deploying SKILL.md for {form_data.slug}: {e}"
+                )
 
     # Build installation warnings
     warnings = []
@@ -447,6 +493,8 @@ async def install_skill(
         warnings=warnings,
         auto_deployed=auto_deployed,
         scripts_path=scripts_path,
+        install_steps=parsed.install_steps,
+        skill_content=parsed.instructions,
     )
 
 
@@ -495,7 +543,9 @@ async def get_installations(
     return MarketplaceInstallations.get_installations_by_user_id(user.id, db=db)
 
 
-@router.get("/installations/{installation_id}", response_model=MarketplaceInstallationModel)
+@router.get(
+    "/installations/{installation_id}", response_model=MarketplaceInstallationModel
+)
 async def get_installation(
     installation_id: str,
     user=Depends(get_verified_user),
@@ -671,7 +721,9 @@ async def deploy_to_terminal(
         from open_webui.models.groups import Groups
         from open_webui.utils.access_control import has_connection_access
 
-        user_group_ids = {group.id for group in Groups.get_groups_by_member_id(user.id, db=db)}
+        user_group_ids = {
+            group.id for group in Groups.get_groups_by_member_id(user.id, db=db)
+        }
         if not has_connection_access(user, connection, user_group_ids):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -703,13 +755,15 @@ async def deploy_to_terminal(
         )
 
     # Update config with deployment info
-    actual_terminal_id = form_data.terminal_id if form_data.terminal_id != "auto" else connection.get("id", "auto")
+    actual_terminal_id = (
+        form_data.terminal_id
+        if form_data.terminal_id != "auto"
+        else connection.get("id", "auto")
+    )
     config["scripts_path"] = scripts_path
     config["scripts_deployed"] = True
     config["deployed_terminal_id"] = actual_terminal_id
-    MarketplaceInstallations.update_installation_config(
-        installation_id, config, db=db
-    )
+    MarketplaceInstallations.update_installation_config(installation_id, config, db=db)
 
     return {
         "status": "ok",

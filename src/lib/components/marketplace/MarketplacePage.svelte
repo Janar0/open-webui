@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, getContext, tick } from 'svelte';
 	import { toast } from 'svelte-sonner';
+	import { goto } from '$app/navigation';
 	import { user } from '$lib/stores';
 
 	import {
@@ -36,6 +37,7 @@
 	let installedSlugs: Set<string> = new Set();
 	let installingSlugs: Set<string> = new Set();
 	let deployingIds: Set<string> = new Set();
+	let nonSuspiciousOnly = true;
 
 	// Detail modal
 	let showDetail = false;
@@ -57,6 +59,7 @@
 	});
 
 	function sortResults(items: any[]): any[] {
+		if (sortBy === 'relevance') return items;
 		const sorted = [...items];
 		switch (sortBy) {
 			case 'downloads':
@@ -80,7 +83,13 @@
 		loading = true;
 		try {
 			const token = localStorage.token;
-			const result = await searchCatalog(token, query, append ? nextCursor : '');
+			const result = await searchCatalog(
+				token,
+				query,
+				append ? nextCursor : '',
+				30,
+				nonSuspiciousOnly
+			);
 			let items: any[] = result?.items || [];
 			nextCursor = result?.nextCursor || '';
 
@@ -100,6 +109,9 @@
 
 	function handleSearchInput() {
 		clearTimeout(searchDebounceTimer);
+		// Switch to relevance sort when querying, restore recent when cleared
+		if (query && sortBy === 'recent') sortBy = 'relevance';
+		else if (!query && sortBy === 'relevance') sortBy = 'recent';
 		searchDebounceTimer = setTimeout(() => {
 			searchSkills();
 		}, 400);
@@ -150,6 +162,13 @@
 			}
 
 			await loadInstallations();
+
+			// If requires bins, open AI setup chat
+			if (result.requires_bins && result.requires_bins.length > 0) {
+				showDetail = false;
+				openSetupChat(result);
+				return;
+			}
 
 			// If requires env vars, open config modal
 			if (result.requires_env && result.requires_env.length > 0) {
@@ -230,6 +249,56 @@
 	function getInstallationForSlug(slug: string) {
 		return installations.find((i: any) => i.external_slug === slug);
 	}
+
+	function openSetupChat(result: any) {
+		const locale =
+			(typeof localStorage !== 'undefined' && localStorage.getItem('locale')) || 'en-US';
+
+		let prompt = `I just installed the "${result.name}" skill.`;
+
+		if (result.requires_bins?.length > 0) {
+			prompt += `\n\nTo get it working, I need to install the required CLI tool(s): **${result.requires_bins.join(', ')}**.`;
+		}
+
+		if (result.install_steps?.length > 0) {
+			const brewStep = result.install_steps.find((s: any) => s.kind === 'brew');
+			const aptStep = result.install_steps.find(
+				(s: any) => s.kind === 'apt' || s.kind === 'apt-get'
+			);
+			if (brewStep) {
+				prompt += `\n\nTo install via Homebrew:\n\`\`\`\nbrew install ${brewStep.formula}\n\`\`\``;
+			} else if (aptStep) {
+				prompt += `\n\nTo install via apt:\n\`\`\`\napt-get install ${aptStep.package || aptStep.formula}\n\`\`\``;
+			} else {
+				const firstStep = result.install_steps[0];
+				if (firstStep?.label) {
+					prompt += `\n\nInstall option: ${firstStep.label}`;
+				}
+			}
+		}
+
+		if (result.skill_content) {
+			// Extract setup/auth lines from SKILL.md instructions (lines with commands like auth, setup, credentials)
+			const setupLines = result.skill_content
+				.split('\n')
+				.filter((line: string) =>
+					/auth|setup|credential|login|api[_\s-]?key|token|configure/i.test(line)
+				)
+				.slice(0, 8)
+				.join('\n');
+			if (setupLines) {
+				prompt += `\n\n**Then configure it:**\n${setupLines}`;
+			}
+		}
+
+		prompt += '\n\nPlease guide me step by step, starting by checking if the tool is installed.';
+
+		if (!locale.startsWith('en')) {
+			prompt += `\n\nNote: please respond in ${locale} — that is the user's interface language.`;
+		}
+
+		goto(`/?q=${encodeURIComponent(prompt)}`);
+	}
 </script>
 
 <div class="flex flex-col h-full">
@@ -255,9 +324,7 @@
 			>
 				{$i18n.t('Installed')}
 				{#if installations.length > 0}
-					<span
-						class="ml-1 text-xs bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 rounded-full"
-					>
+					<span class="ml-1 text-xs bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 rounded-full">
 						{installations.length}
 					</span>
 				{/if}
@@ -285,11 +352,30 @@
 				bind:value={sortBy}
 				on:change={handleSortChange}
 			>
+				{#if sortBy === 'relevance'}
+					<option value="relevance">{$i18n.t('Relevance')}</option>
+				{/if}
 				<option value="recent">{$i18n.t('Recent')}</option>
 				<option value="downloads">{$i18n.t('Downloads')}</option>
 				<option value="installs">{$i18n.t('Popular')}</option>
 				<option value="name">{$i18n.t('Name')}</option>
 			</select>
+			<button
+				class="flex items-center gap-1.5 px-3 py-2 text-sm border rounded-xl transition
+					{nonSuspiciousOnly
+					? 'border-green-400 dark:border-green-600 text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20'
+					: 'border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400'}"
+				title={nonSuspiciousOnly
+					? $i18n.t('Hiding suspicious skills')
+					: $i18n.t('Showing all skills')}
+				on:click={() => {
+					nonSuspiciousOnly = !nonSuspiciousOnly;
+					searchSkills();
+				}}
+			>
+				<span>{nonSuspiciousOnly ? '🛡️' : '⚠️'}</span>
+				<span class="hidden sm:inline">{nonSuspiciousOnly ? $i18n.t('Safe') : $i18n.t('All')}</span>
+			</button>
 		</div>
 
 		{#if loading}

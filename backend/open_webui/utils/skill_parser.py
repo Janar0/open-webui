@@ -27,6 +27,7 @@ class SkillMetadata(BaseModel):
     emoji: Optional[str] = None
     primary_env: Optional[str] = None
     requires: SkillRequirements = SkillRequirements()
+    install_steps: list[dict] = []
     instructions: str = ""  # The markdown body (without frontmatter)
     raw_frontmatter: dict = {}
 
@@ -78,6 +79,12 @@ def parse_skill_md(content: str) -> SkillMetadata:
         config=requires_raw.get("config", []) or [],
     )
 
+    install_steps = meta_block.get("install", []) or []
+    if not isinstance(install_steps, list):
+        install_steps = []
+    else:
+        install_steps = [s for s in install_steps if isinstance(s, dict)]
+
     return SkillMetadata(
         name=frontmatter.get("name", "unknown"),
         description=frontmatter.get("description", ""),
@@ -86,6 +93,7 @@ def parse_skill_md(content: str) -> SkillMetadata:
         emoji=meta_block.get("emoji"),
         primary_env=meta_block.get("primaryEnv"),
         requires=requires,
+        install_steps=install_steps,
         instructions=body.strip(),
         raw_frontmatter=frontmatter,
     )

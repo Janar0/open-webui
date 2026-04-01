@@ -37,7 +37,9 @@ class ClawHubError(Exception):
 
 
 class ClawHubClient:
-    def __init__(self, base_url: str = "https://clawhub.ai", api_prefix: str = "/api/v1"):
+    def __init__(
+        self, base_url: str = "https://clawhub.ai", api_prefix: str = "/api/v1"
+    ):
         self.base_url = base_url
         self.api_prefix = api_prefix
         self._base_api_url = f"{base_url}{api_prefix}"
@@ -133,6 +135,7 @@ class ClawHubClient:
         cursor: Optional[str] = None,
         limit: int = 30,
         highlighted_only: bool = False,
+        non_suspicious_only: bool = False,
         token: Optional[str] = None,
     ) -> dict:
         """
@@ -144,7 +147,8 @@ class ClawHubClient:
             params = {"q": query}
             if highlighted_only:
                 params["highlightedOnly"] = "true"
-            params["nonSuspiciousOnly"] = "true"
+            if non_suspicious_only:
+                params["nonSuspiciousOnly"] = "true"
             raw = await self._request("/search", params=params, token=token)
             items = [self._normalize_search_item(r) for r in raw.get("results", [])]
             return {"items": items, "nextCursor": ""}
@@ -152,7 +156,8 @@ class ClawHubClient:
             params = {"limit": str(limit)}
             if cursor:
                 params["cursor"] = cursor
-            params["nonSuspiciousOnly"] = "true"
+            if non_suspicious_only:
+                params["nonSuspiciousOnly"] = "true"
             raw = await self._request("/skills", params=params, token=token)
             items = [self._normalize_list_item(s) for s in raw.get("items", [])]
             return {"items": items, "nextCursor": raw.get("nextCursor", "")}
@@ -163,19 +168,26 @@ class ClawHubClient:
         return self._normalize_skill_detail(raw)
 
     async def get_skill_versions(
-        self, slug: str, limit: int = 10, cursor: Optional[str] = None,
+        self,
+        slug: str,
+        limit: int = 10,
+        cursor: Optional[str] = None,
         token: Optional[str] = None,
     ) -> dict:
         """Get version history for a skill."""
         params = {"limit": str(limit)}
         if cursor:
             params["cursor"] = cursor
-        return await self._request(f"/skills/{slug}/versions", params=params, token=token)
+        return await self._request(
+            f"/skills/{slug}/versions", params=params, token=token
+        )
 
     # ── Files & Download ───────────────────────────────────────────────
 
     async def get_skill_file(
-        self, slug: str, path: str = "SKILL.md",
+        self,
+        slug: str,
+        path: str = "SKILL.md",
         version: Optional[str] = None,
         token: Optional[str] = None,
     ) -> str:
@@ -188,7 +200,9 @@ class ClawHubClient:
         )
 
     async def download_skill(
-        self, slug: str, version: Optional[str] = None,
+        self,
+        slug: str,
+        version: Optional[str] = None,
         token: Optional[str] = None,
     ) -> bytes:
         """Download full skill archive (ZIP). Returns raw bytes."""
@@ -196,12 +210,17 @@ class ClawHubClient:
         if version:
             params["version"] = version
         return await self._request(
-            "/download", params=params, token=token,
-            timeout=DOWNLOAD_TIMEOUT, response_type="bytes",
+            "/download",
+            params=params,
+            token=token,
+            timeout=DOWNLOAD_TIMEOUT,
+            response_type="bytes",
         )
 
     async def get_skill_scan(
-        self, slug: str, version: Optional[str] = None,
+        self,
+        slug: str,
+        version: Optional[str] = None,
         token: Optional[str] = None,
     ) -> dict:
         """Get security scan results for a skill."""
@@ -234,7 +253,9 @@ class ClawHubClient:
         """
         url = f"{self._base_api_url}{path}"
         try:
-            async with aiohttp.ClientSession(timeout=timeout or DEFAULT_TIMEOUT) as session:
+            async with aiohttp.ClientSession(
+                timeout=timeout or DEFAULT_TIMEOUT
+            ) as session:
                 async with session.get(
                     url, params=params, headers=self._headers(token)
                 ) as resp:
@@ -246,7 +267,9 @@ class ClawHubClient:
                         return await resp.json()
                     elif resp.status == 429:
                         retry_after = resp.headers.get("Retry-After", "30")
-                        raise ClawHubError(429, f"Rate limited. Retry after {retry_after}s")
+                        raise ClawHubError(
+                            429, f"Rate limited. Retry after {retry_after}s"
+                        )
                     else:
                         text = await resp.text()
                         raise ClawHubError(resp.status, text[:500])
