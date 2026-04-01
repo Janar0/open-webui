@@ -259,7 +259,8 @@ class SkillDeployer:
         Used for skills that have no scripts but still need a folder on the terminal.
         Returns the base directory path.
         """
-        base_dir = f"skills/{self._sanitize_slug(skill_slug)}"        async with aiohttp.ClientSession(timeout=DEPLOY_TIMEOUT) as session:
+        base_dir = f"skills/{self._sanitize_slug(skill_slug)}"
+        async with aiohttp.ClientSession(timeout=DEPLOY_TIMEOUT) as session:
             await self._write_file(
                 session,
                 terminal_url,
